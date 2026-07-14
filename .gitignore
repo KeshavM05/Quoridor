@@ -26,3 +26,7 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Reference assets (screenshots, scraped CSS - too large for git)
+reference/screenshots/
+reference/*_styles.css
