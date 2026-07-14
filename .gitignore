@@ -27,6 +27,5 @@ Thumbs.db
 .env
 .env.local
 
-# Reference assets (screenshots, scraped CSS - too large for git)
-reference/screenshots/
+# Reference assets (scraped CSS from target sites)
 reference/*_styles.css
