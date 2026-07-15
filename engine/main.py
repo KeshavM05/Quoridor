@@ -35,7 +35,7 @@ def move_to_notation(move):
     elif move[0] == 'wall':
         orient, r, c = move[1], move[2], move[3]
         row_num = 9 - r
-        prefix = 'H' if orient == 'h' else 'V'
+        prefix = 'h' if orient == 'h' else 'v'
         return f"{prefix}{cols[c]}{row_num}"
     return "?"
 
