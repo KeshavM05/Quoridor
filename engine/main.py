@@ -107,3 +107,57 @@ def undo_move():
     """Undo is not trivial with the current engine (no state stack).
     For now, return an error. TODO: implement game state stack."""
     raise HTTPException(status_code=501, detail="Undo not yet implemented")
+
+
+# ============ Replay Endpoints ============
+import os
+import json
+import glob
+
+TRAINING_RUNS_DIR = os.path.join(os.path.dirname(__file__), 'training_runs')
+
+
+@app.get("/replays")
+def list_replays():
+    """List all saved game replays from training runs."""
+    replays = []
+    if not os.path.exists(TRAINING_RUNS_DIR):
+        return replays
+
+    for run_dir in sorted(glob.glob(os.path.join(TRAINING_RUNS_DIR, 'run_*'))):
+        replays_dir = os.path.join(run_dir, 'replays')
+        if not os.path.exists(replays_dir):
+            continue
+        for f in sorted(os.listdir(replays_dir)):
+            if f.endswith('.json'):
+                filepath = os.path.join(replays_dir, f)
+                try:
+                    with open(filepath, 'r') as fp:
+                        data = json.load(fp)
+                    replays.append({
+                        "id": f.replace('.json', ''),
+                        "iteration": data.get('iteration', 0),
+                        "winner": data.get('winner', 0),
+                        "length": data.get('length', len(data.get('moves', []))),
+                        "label": data.get('label', ''),
+                        "run": os.path.basename(run_dir),
+                    })
+                except (json.JSONDecodeError, IOError):
+                    pass
+
+    return replays
+
+
+@app.get("/replays/{replay_id}")
+def get_replay(replay_id: str):
+    """Get a specific replay by ID."""
+    if not os.path.exists(TRAINING_RUNS_DIR):
+        raise HTTPException(status_code=404, detail="No training runs found")
+
+    for run_dir in glob.glob(os.path.join(TRAINING_RUNS_DIR, 'run_*')):
+        filepath = os.path.join(run_dir, 'replays', f'{replay_id}.json')
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f:
+                return json.load(f)
+
+    raise HTTPException(status_code=404, detail="Replay not found")

@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { playMove as sfxMove, playWall as sfxWall, playWin as sfxWin, playStart as sfxStart } from './sounds.js';
 import WatchGame from './WatchGame.jsx';
+import ReplayViewer from './ReplayViewer.jsx';
 import './index.css';
 
 const API_URL = 'http://localhost:8000';
 const BOARD_SIZE = 9;
 
 export default function App() {
-  const [screen, setScreen] = useState('menu'); // 'menu' | 'game' | 'watch'
+  const [screen, setScreen] = useState('menu'); // 'menu' | 'game' | 'watch' | 'replays' | 'replay'
   const [gameState, setGameState] = useState(null);
   const [error, setError] = useState(null);
+  const [activeReplay, setActiveReplay] = useState(null);
 
   const fetchState = async () => {
     try {
@@ -37,11 +39,36 @@ export default function App() {
   };
 
   if (screen === 'menu') {
-    return <MenuScreen onStart={startGame} onWatch={() => setScreen('watch')} error={error} />;
+    return (
+      <MenuScreen
+        onStart={startGame}
+        onWatch={() => setScreen('watch')}
+        onReplays={() => setScreen('replays')}
+        error={error}
+      />
+    );
   }
 
   if (screen === 'watch') {
     return <WatchGame onBack={() => setScreen('menu')} />;
+  }
+
+  if (screen === 'replays') {
+    return (
+      <ReplayListScreen
+        onBack={() => setScreen('menu')}
+        onSelectReplay={(replay) => { setActiveReplay(replay); setScreen('replay'); }}
+      />
+    );
+  }
+
+  if (screen === 'replay' && activeReplay) {
+    return (
+      <ReplayViewer
+        replay={activeReplay}
+        onBack={() => setScreen('replays')}
+      />
+    );
   }
 
   return (
@@ -54,7 +81,7 @@ export default function App() {
 }
 
 // ============ MENU SCREEN ============
-function MenuScreen({ onStart, onWatch, error }) {
+function MenuScreen({ onStart, onWatch, onReplays, error }) {
   return (
     <div className="menu-screen">
       <div className="menu-header">
@@ -110,6 +137,15 @@ function MenuScreen({ onStart, onWatch, error }) {
           </div>
           <span className="menu-card-arrow">›</span>
         </button>
+
+        <button className="menu-card" onClick={onReplays}>
+          <div className="menu-card-icon">🎬</div>
+          <div className="menu-card-text">
+            <span className="menu-card-label">Replays</span>
+            <span className="menu-card-desc">Browse recorded games</span>
+          </div>
+          <span className="menu-card-arrow">›</span>
+        </button>
       </div>
 
       <div className="menu-rules">
@@ -138,6 +174,77 @@ function MenuScreen({ onStart, onWatch, error }) {
 
       <div className="menu-footer">
         <span>Barricade v0.1</span>
+      </div>
+    </div>
+  );
+}
+
+// ============ REPLAY LIST SCREEN ============
+function ReplayListScreen({ onBack, onSelectReplay }) {
+  const [replays, setReplays] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchReplays = async () => {
+      try {
+        const res = await fetch(`${API_URL}/replays`);
+        if (!res.ok) throw new Error('Failed to fetch replays');
+        const data = await res.json();
+        setReplays(data);
+        setError(null);
+      } catch (e) {
+        setError('Cannot load replays. Is the server running?');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReplays();
+  }, []);
+
+  const handleSelect = async (replayId) => {
+    try {
+      const res = await fetch(`${API_URL}/replays/${replayId}`);
+      if (!res.ok) throw new Error('Failed to fetch replay');
+      const data = await res.json();
+      onSelectReplay(data);
+    } catch (e) {
+      setError('Failed to load replay.');
+    }
+  };
+
+  return (
+    <div className="game-screen">
+      <div className="game-header">
+        <button className="back-btn" onClick={onBack}>&#8249; Menu</button>
+        <div className="replay-badge">REPLAYS</div>
+      </div>
+
+      <div className="replay-list-container">
+        {loading && <p className="replay-list-status">Loading replays...</p>}
+        {error && <p className="replay-list-status error">{error}</p>}
+        {!loading && !error && replays.length === 0 && (
+          <p className="replay-list-status">No replays available yet.</p>
+        )}
+        {!loading && replays.length > 0 && (
+          <div className="replay-list">
+            {replays.map((r) => (
+              <button
+                key={r.id}
+                className="replay-list-item"
+                onClick={() => handleSelect(r.id)}
+              >
+                <div className="replay-item-info">
+                  <span className="replay-item-id">{r.id}</span>
+                  <span className="replay-item-meta">
+                    {r.length} moves &middot; Winner: {r.winner === 1 ? 'Red' : 'Blue'}
+                  </span>
+                </div>
+                <span className="menu-card-arrow">&#8250;</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ import argparse
 from model import QuoridorNet, ACTION_SIZE
 from self_play import generate_self_play_data
 from arena import pit_models
+from journal import TrainingJournal, select_notable_games
 
 
 class QuoridorDataset(Dataset):
@@ -123,6 +124,19 @@ def training_loop(
     # TensorBoard logging
     writer = SummaryWriter(log_dir='runs')
 
+    # Initialize training journal
+    journal = TrainingJournal(config={
+        'num_iterations': num_iterations,
+        'num_self_play_games': num_self_play_games,
+        'num_simulations': num_simulations,
+        'num_arena_games': num_arena_games,
+        'win_threshold': win_threshold,
+        'epochs': epochs,
+        'batch_size': batch_size,
+        'learning_rate': lr,
+        'device': device,
+    })
+
     # Initialize model
     model = QuoridorNet()
     model.to(device)
@@ -136,21 +150,27 @@ def training_loop(
     # Training data buffer (keep last N games worth)
     replay_buffer = deque(maxlen=50000)
 
+    training_start = time.time()
+
     for iteration in range(1, num_iterations + 1):
         print(f"\n{'='*50}")
         print(f"ITERATION {iteration}/{num_iterations}")
         print(f"{'='*50}")
 
-        # 1. Self-play
+        # 1. Self-play (with replay recording for journal)
         print(f"\n[1/3] Self-play ({num_self_play_games} games, {num_simulations} sims/move)...")
         t0 = time.time()
-        examples, avg_game_length = generate_self_play_data(
+        examples, avg_game_length, game_replays = generate_self_play_data(
             model, device=device,
             num_games=num_self_play_games,
-            num_simulations=num_simulations
+            num_simulations=num_simulations,
+            record_replays=True
         )
         print(f"  Generated {len(examples)} training positions in {time.time()-t0:.1f}s")
         replay_buffer.extend(examples)
+
+        # Select notable games for the journal
+        notable_games = select_notable_games(game_replays)
 
         # Log self-play metrics
         writer.add_scalar('self_play/avg_game_length', avg_game_length, iteration)
@@ -204,17 +224,40 @@ def training_loop(
             print(f"  ✗ New model rejected — reverting")
             model.load_state_dict(old_state)
 
+        # Log iteration to journal
+        policy_loss = float(epoch_losses[-1][0]) if epoch_losses else None
+        value_loss = float(epoch_losses[-1][1]) if epoch_losses else None
+
+        journal.log_iteration(
+            iteration=iteration,
+            policy_loss=policy_loss,
+            value_loss=value_loss,
+            win_rate=float(win_rate),
+            avg_game_length=float(avg_game_length),
+            model_accepted=model_accepted,
+            notable_games=notable_games,
+            num_games_played=num_self_play_games,
+        )
+
+        # Save journal checkpoint every 5 iterations
+        if iteration % 5 == 0:
+            journal.save_checkpoint(iteration, model.state_dict())
+
         # Save metrics for web dashboard
         from dashboard import save_metrics
         save_metrics({
             'iteration': iteration,
-            'policy_loss': float(epoch_losses[-1][0]) if epoch_losses else None,
-            'value_loss': float(epoch_losses[-1][1]) if epoch_losses else None,
+            'policy_loss': policy_loss,
+            'value_loss': value_loss,
             'win_rate': float(win_rate),
             'avg_game_length': float(avg_game_length),
             'total_positions': len(replay_buffer),
             'model_accepted': model_accepted,
         })
+
+    # Finalize the journal with summary
+    total_time = time.time() - training_start
+    journal.finalize(total_time)
 
     writer.close()
     print(f"\nTraining complete. Best model saved to {best_path}")
