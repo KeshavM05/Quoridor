@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from collections import deque
 import time
 import argparse
@@ -41,14 +42,21 @@ class QuoridorDataset(Dataset):
         )
 
 
-def train_network(model, examples, device='cpu', epochs=10, batch_size=64, lr=0.001):
-    """Train the network on self-play data."""
+def train_network(model, examples, device='cpu', epochs=10, batch_size=64, lr=0.001, writer=None, global_step=0):
+    """Train the network on self-play data.
+
+    Returns:
+        model: the trained model
+        epoch_losses: list of (avg_policy_loss, avg_value_loss) per epoch
+    """
     dataset = QuoridorDataset(examples)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     model.train()
     model.to(device)
+
+    epoch_losses = []
 
     for epoch in range(epochs):
         total_policy_loss = 0
@@ -79,9 +87,17 @@ def train_network(model, examples, device='cpu', epochs=10, batch_size=64, lr=0.
             batches += 1
 
         if batches > 0:
-            print(f"  Epoch {epoch+1}/{epochs} — policy_loss: {total_policy_loss/batches:.4f}, value_loss: {total_value_loss/batches:.4f}")
+            avg_policy = total_policy_loss / batches
+            avg_value = total_value_loss / batches
+            epoch_losses.append((avg_policy, avg_value))
+            print(f"  Epoch {epoch+1}/{epochs} — policy_loss: {avg_policy:.4f}, value_loss: {avg_value:.4f}")
 
-    return model
+            if writer is not None:
+                step = global_step * epochs + epoch
+                writer.add_scalar('loss/policy', avg_policy, step)
+                writer.add_scalar('loss/value', avg_value, step)
+
+    return model, epoch_losses
 
 
 def training_loop(
@@ -104,6 +120,9 @@ def training_loop(
 
     os.makedirs(checkpoint_dir, exist_ok=True)
 
+    # TensorBoard logging
+    writer = SummaryWriter(log_dir='runs')
+
     # Initialize model
     model = QuoridorNet()
     model.to(device)
@@ -125,13 +144,17 @@ def training_loop(
         # 1. Self-play
         print(f"\n[1/3] Self-play ({num_self_play_games} games, {num_simulations} sims/move)...")
         t0 = time.time()
-        examples = generate_self_play_data(
+        examples, avg_game_length = generate_self_play_data(
             model, device=device,
             num_games=num_self_play_games,
             num_simulations=num_simulations
         )
         print(f"  Generated {len(examples)} training positions in {time.time()-t0:.1f}s")
         replay_buffer.extend(examples)
+
+        # Log self-play metrics
+        writer.add_scalar('self_play/avg_game_length', avg_game_length, iteration)
+        writer.add_scalar('self_play/replay_buffer_size', len(replay_buffer), iteration)
 
         # 2. Train
         print(f"\n[2/3] Training ({epochs} epochs, {len(replay_buffer)} positions)...")
@@ -140,9 +163,13 @@ def training_loop(
         # Save current model for arena comparison
         old_state = {k: v.clone() for k, v in model.state_dict().items()}
 
-        train_network(
+        # Log learning rate
+        writer.add_scalar('train/learning_rate', lr, iteration)
+
+        model, epoch_losses = train_network(
             model, list(replay_buffer),
-            device=device, epochs=epochs, batch_size=batch_size, lr=lr
+            device=device, epochs=epochs, batch_size=batch_size, lr=lr,
+            writer=writer, global_step=iteration
         )
         print(f"  Training completed in {time.time()-t0:.1f}s")
 
@@ -164,7 +191,11 @@ def training_loop(
         print(f"  New model: {new_wins}W / {old_wins}L / {draws}D (win rate: {win_rate:.1%})")
         print(f"  Arena completed in {time.time()-t0:.1f}s")
 
-        if win_rate >= win_threshold:
+        # Log arena win rate
+        writer.add_scalar('arena/win_rate', win_rate, iteration)
+
+        model_accepted = win_rate >= win_threshold
+        if model_accepted:
             print(f"  ✓ New model accepted (>{win_threshold:.0%})")
             torch.save(model.state_dict(), best_path)
             torch.save(model.state_dict(),
@@ -173,6 +204,19 @@ def training_loop(
             print(f"  ✗ New model rejected — reverting")
             model.load_state_dict(old_state)
 
+        # Save metrics for web dashboard
+        from dashboard import save_metrics
+        save_metrics({
+            'iteration': iteration,
+            'policy_loss': float(epoch_losses[-1][0]) if epoch_losses else None,
+            'value_loss': float(epoch_losses[-1][1]) if epoch_losses else None,
+            'win_rate': float(win_rate),
+            'avg_game_length': float(avg_game_length),
+            'total_positions': len(replay_buffer),
+            'model_accepted': model_accepted,
+        })
+
+    writer.close()
     print(f"\nTraining complete. Best model saved to {best_path}")
 
 

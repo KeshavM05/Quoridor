@@ -75,14 +75,21 @@ def generate_self_play_data(model, device='cpu', num_games=100, num_simulations=
     Generate training data from multiple self-play games.
 
     Returns:
-        List of (state, policy, value) tuples
+        Tuple of (examples, avg_game_length) where:
+          - examples: List of (state, policy, value) tuples
+          - avg_game_length: average number of moves per game
     """
     all_examples = []
+    game_lengths = []
 
     for i in range(num_games):
         examples = self_play_game(model, device=device, num_simulations=num_simulations)
+        game_lengths.append(len(examples))
         all_examples.extend(examples)
         if (i + 1) % 10 == 0:
             print(f"  Self-play: {i+1}/{num_games} games, {len(all_examples)} positions")
 
-    return all_examples
+    avg_game_length = sum(game_lengths) / len(game_lengths) if game_lengths else 0
+    print(f"  Average game length: {avg_game_length:.1f} moves")
+
+    return all_examples, avg_game_length

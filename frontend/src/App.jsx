@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { playMove as sfxMove, playWall as sfxWall, playWin as sfxWin, playStart as sfxStart } from './sounds.js';
+import WatchGame from './WatchGame.jsx';
 import './index.css';
 
 const API_URL = 'http://localhost:8000';
 const BOARD_SIZE = 9;
 
 export default function App() {
-  const [screen, setScreen] = useState('menu'); // 'menu' | 'game'
+  const [screen, setScreen] = useState('menu'); // 'menu' | 'game' | 'watch'
   const [gameState, setGameState] = useState(null);
   const [error, setError] = useState(null);
 
@@ -36,7 +37,11 @@ export default function App() {
   };
 
   if (screen === 'menu') {
-    return <MenuScreen onStart={startGame} error={error} />;
+    return <MenuScreen onStart={startGame} onWatch={() => setScreen('watch')} error={error} />;
+  }
+
+  if (screen === 'watch') {
+    return <WatchGame onBack={() => setScreen('menu')} />;
   }
 
   return (
@@ -49,7 +54,7 @@ export default function App() {
 }
 
 // ============ MENU SCREEN ============
-function MenuScreen({ onStart, error }) {
+function MenuScreen({ onStart, onWatch, error }) {
   return (
     <div className="menu-screen">
       <div className="menu-header">
@@ -93,6 +98,15 @@ function MenuScreen({ onStart, error }) {
           <div className="menu-card-text">
             <span className="menu-card-label">Play Online</span>
             <span className="menu-card-desc">Coming soon</span>
+          </div>
+          <span className="menu-card-arrow">›</span>
+        </button>
+
+        <button className="menu-card" onClick={onWatch}>
+          <div className="menu-card-icon">👁️</div>
+          <div className="menu-card-text">
+            <span className="menu-card-label">Watch AI</span>
+            <span className="menu-card-desc">Live self-play viewer</span>
           </div>
           <span className="menu-card-arrow">›</span>
         </button>
