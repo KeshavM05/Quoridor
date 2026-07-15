@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { playMove as sfxMove, playWall as sfxWall, playWin as sfxWin, playStart as sfxStart } from './sounds.js';
 import './index.css';
 
 const API_URL = 'http://localhost:8000';
@@ -25,7 +26,10 @@ export default function App() {
     try {
       await fetch(`${API_URL}/reset`, { method: 'POST' });
       const ok = await fetchState();
-      if (ok) setScreen('game');
+      if (ok) {
+        setScreen('game');
+        sfxStart();
+      }
     } catch {
       setError('Cannot connect to engine.');
     }
@@ -145,6 +149,9 @@ function GameScreen({ gameState, setGameState, onBack }) {
       const data = await res.json();
       if (!res.ok) return false;
       setGameState(data);
+      if (move_type === 'move') sfxMove();
+      else if (move_type === 'wall') sfxWall();
+      if (data.winner !== 0) setTimeout(sfxWin, 300);
       return true;
     } catch { return false; }
   };
