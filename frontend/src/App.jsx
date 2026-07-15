@@ -5,23 +5,135 @@ const API_URL = 'http://localhost:8000';
 const BOARD_SIZE = 9;
 
 export default function App() {
+  const [screen, setScreen] = useState('menu'); // 'menu' | 'game'
   const [gameState, setGameState] = useState(null);
-  const [mode, setMode] = useState('move'); // 'move', 'wall_h', 'wall_v'
-  const [wallPreview, setWallPreview] = useState(null);
   const [error, setError] = useState(null);
-  const boardRef = useRef(null);
-
-  useEffect(() => { fetchState(); }, []);
 
   const fetchState = async () => {
     try {
       const res = await fetch(`${API_URL}/state`);
       setGameState(await res.json());
       setError(null);
+      return true;
     } catch {
-      setError('Cannot connect to engine. Start the Python server.');
+      setError('Cannot connect to engine.');
+      return false;
     }
   };
+
+  const startGame = async () => {
+    try {
+      await fetch(`${API_URL}/reset`, { method: 'POST' });
+      const ok = await fetchState();
+      if (ok) setScreen('game');
+    } catch {
+      setError('Cannot connect to engine.');
+    }
+  };
+
+  if (screen === 'menu') {
+    return <MenuScreen onStart={startGame} error={error} />;
+  }
+
+  return (
+    <GameScreen
+      gameState={gameState}
+      setGameState={setGameState}
+      onBack={() => setScreen('menu')}
+    />
+  );
+}
+
+// ============ MENU SCREEN ============
+function MenuScreen({ onStart, error }) {
+  return (
+    <div className="menu-screen">
+      <div className="menu-header">
+        <div className="menu-logo">
+          <svg width="56" height="56" viewBox="0 0 48 48">
+            <rect x="2" y="4" width="44" height="40" rx="7" fill="#7f1d1d"/>
+            <rect x="4" y="6" width="18" height="10" rx="2.4" fill="#fb7185"/>
+            <rect x="24" y="6" width="20" height="10" rx="2.4" fill="#be123c"/>
+            <rect x="4" y="18" width="9" height="10" rx="2.4" fill="#be123c"/>
+            <rect x="15" y="18" width="18" height="10" rx="2.4" fill="#fb7185"/>
+            <rect x="35" y="18" width="9" height="10" rx="2.4" fill="#be123c"/>
+            <rect x="4" y="30" width="20" height="10" rx="2.4" fill="#fb7185"/>
+            <rect x="26" y="30" width="18" height="10" rx="2.4" fill="#be123c"/>
+          </svg>
+        </div>
+        <h1 className="menu-title">Barricade</h1>
+        <p className="menu-subtitle">STRATEGIC BOARD GAME</p>
+      </div>
+
+      <div className="menu-modes">
+        <button className="menu-card primary" onClick={onStart}>
+          <div className="menu-card-icon">⚔️</div>
+          <div className="menu-card-text">
+            <span className="menu-card-label">Local Game</span>
+            <span className="menu-card-desc">2 players, one device</span>
+          </div>
+          <span className="menu-card-arrow">›</span>
+        </button>
+
+        <button className="menu-card" disabled>
+          <div className="menu-card-icon">🤖</div>
+          <div className="menu-card-text">
+            <span className="menu-card-label">vs Computer</span>
+            <span className="menu-card-desc">Coming soon</span>
+          </div>
+          <span className="menu-card-arrow">›</span>
+        </button>
+
+        <button className="menu-card" disabled>
+          <div className="menu-card-icon">🌐</div>
+          <div className="menu-card-text">
+            <span className="menu-card-label">Play Online</span>
+            <span className="menu-card-desc">Coming soon</span>
+          </div>
+          <span className="menu-card-arrow">›</span>
+        </button>
+      </div>
+
+      <div className="menu-rules">
+        <div className="menu-rules-title">How to Play</div>
+        <div className="menu-rules-grid">
+          <div className="rule-item">
+            <div className="rule-icon">🏃</div>
+            <span>Race to the other side</span>
+          </div>
+          <div className="rule-item">
+            <div className="rule-icon">🧱</div>
+            <span>Place walls to block</span>
+          </div>
+          <div className="rule-item">
+            <div className="rule-icon">⚡</div>
+            <span>Jump over opponents</span>
+          </div>
+          <div className="rule-item">
+            <div className="rule-icon">🚫</div>
+            <span>Can't fully trap</span>
+          </div>
+        </div>
+      </div>
+
+      {error && <p className="menu-error">{error}</p>}
+
+      <div className="menu-footer">
+        <span>Barricade v0.1</span>
+      </div>
+    </div>
+  );
+}
+
+// ============ GAME SCREEN ============
+function GameScreen({ gameState, setGameState, onBack }) {
+  const [dragState, setDragState] = useState(null); // { orient: 'h'|'v', x, y, boardPos: {r,c}|null }
+  const boardRef = useRef(null);
+  const boardRectRef = useRef(null);
+
+  useEffect(() => {
+    if (!gameState) return;
+  }, [gameState]);
 
   const playMove = async (move_type, r, c, orient = null) => {
     try {
@@ -31,56 +143,87 @@ export default function App() {
         body: JSON.stringify({ move_type, r, c, orient })
       });
       const data = await res.json();
-      if (!res.ok) return;
+      if (!res.ok) return false;
       setGameState(data);
-      setWallPreview(null);
-    } catch {}
+      return true;
+    } catch { return false; }
   };
 
   const resetGame = async () => {
     try {
       const res = await fetch(`${API_URL}/reset`, { method: 'POST' });
       setGameState(await res.json());
-      setMode('move');
-      setWallPreview(null);
     } catch {}
   };
 
   const handleCellClick = useCallback((r, c) => {
     if (!gameState || gameState.winner !== 0) return;
-    if (mode === 'move') {
+    if (!dragState) {
       playMove('move', r, c);
-    } else if (mode === 'wall_h') {
-      if (r < 8 && c < 8) playMove('wall', r, c, 'h');
-    } else if (mode === 'wall_v') {
-      if (r < 8 && c < 8) playMove('wall', r, c, 'v');
     }
-  }, [gameState, mode]);
+  }, [gameState, dragState]);
 
-  const handleCellHover = useCallback((r, c) => {
+  // --- Drag & Drop Wall Logic ---
+  const getBoardPos = useCallback((clientX, clientY) => {
+    const rect = boardRectRef.current;
+    if (!rect) return null;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const cellW = rect.width / BOARD_SIZE;
+    const cellH = rect.height / BOARD_SIZE;
+    const col = Math.floor(x / cellW);
+    const row = Math.floor(y / cellH);
+    if (row < 0 || row >= 8 || col < 0 || col >= 8) return null;
+    return { r: row, c: col };
+  }, []);
+
+  const handleDragStart = useCallback((orient, e) => {
     if (!gameState || gameState.winner !== 0) return;
-    if (mode === 'wall_h' && r < 8 && c < 8) {
-      setWallPreview({ orient: 'h', r, c });
-    } else if (mode === 'wall_v' && r < 8 && c < 8) {
-      setWallPreview({ orient: 'v', r, c });
-    } else {
-      setWallPreview(null);
-    }
-  }, [gameState, mode]);
+    const walls = gameState.current_player === 1 ? gameState.p1_walls : gameState.p2_walls;
+    if (walls === 0) return;
 
-  if (error) {
-    return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32 }}>
-        <div>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>🎮</div>
-          <p style={{ color: 'var(--muted)', fontSize: 14, lineHeight: 1.5 }}>{error}</p>
-          <button onClick={fetchState} style={{ marginTop: 16, padding: '8px 20px', borderRadius: 10, background: 'var(--accent)', color: '#000', fontWeight: 800, fontSize: 13 }}>
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    const boardEl = boardRef.current?.querySelector('.board-inner');
+    if (boardEl) {
+      boardRectRef.current = boardEl.getBoundingClientRect();
+    }
+    setDragState({ orient, x: touch.clientX, y: touch.clientY, boardPos: null });
+  }, [gameState]);
+
+  const handleDragMove = useCallback((e) => {
+    if (!dragState) return;
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    const pos = getBoardPos(touch.clientX, touch.clientY);
+    setDragState(prev => ({ ...prev, x: touch.clientX, y: touch.clientY, boardPos: pos }));
+  }, [dragState, getBoardPos]);
+
+  const handleDragEnd = useCallback(async (e) => {
+    if (!dragState) return;
+    const touch = e.changedTouches ? e.changedTouches[0] : e;
+    const pos = getBoardPos(touch.clientX, touch.clientY);
+    if (pos) {
+      await playMove('wall', pos.r, pos.c, dragState.orient);
+    }
+    setDragState(null);
+  }, [dragState, getBoardPos]);
+
+  useEffect(() => {
+    if (!dragState) return;
+    const onMove = (e) => handleDragMove(e);
+    const onEnd = (e) => handleDragEnd(e);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+  }, [dragState, handleDragMove, handleDragEnd]);
 
   if (!gameState) return null;
 
@@ -88,7 +231,12 @@ export default function App() {
   const wallsLeft = current_player === 1 ? p1_walls : p2_walls;
 
   return (
-    <>
+    <div className="game-screen">
+      {/* Header with back */}
+      <div className="game-header">
+        <button className="back-btn" onClick={onBack}>‹ Menu</button>
+      </div>
+
       {/* Player cards */}
       <PlayerCards
         current_player={current_player}
@@ -119,13 +267,13 @@ export default function App() {
               p2_pos={p2_pos}
               current_player={current_player}
               legal_moves={legal_moves}
-              mode={mode}
               winner={winner}
               onCellClick={handleCellClick}
-              onCellHover={handleCellHover}
             />
             <Walls h_walls={h_walls} v_walls={v_walls} />
-            {wallPreview && <WallPreviewEl preview={wallPreview} />}
+            {dragState && dragState.boardPos && (
+              <WallPreviewEl orient={dragState.orient} r={dragState.boardPos.r} c={dragState.boardPos.c} />
+            )}
             {winner !== 0 && (
               <div className={`winner-banner p${winner}`}>
                 <h2>{winner === 1 ? 'Red' : 'Blue'} Wins!</h2>
@@ -136,38 +284,45 @@ export default function App() {
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="controls">
-        <button
-          className={`ctrl-btn ${mode === 'move' ? 'active' : ''}`}
-          onClick={() => { setMode('move'); setWallPreview(null); }}
-        >
-          <span className="icon">👆</span>
-          <span>MOVE</span>
-        </button>
-        <button
-          className={`ctrl-btn ${mode === 'wall_h' ? 'active' : ''}`}
-          onClick={() => setMode('wall_h')}
-        >
-          <span className="icon">━</span>
-          <span>HORIZONTAL</span>
-          <span className="walls-count">{wallsLeft} LEFT</span>
-        </button>
-        <button
-          className={`ctrl-btn ${mode === 'wall_v' ? 'active' : ''}`}
-          onClick={() => setMode('wall_v')}
-        >
-          <span className="icon">┃</span>
-          <span>VERTICAL</span>
-          <span className="walls-count">{wallsLeft} LEFT</span>
-        </button>
+      {/* Wall dock - drag source */}
+      <div className="wall-dock">
+        <span className="wall-dock-label">{wallsLeft} WALLS LEFT</span>
+        <div className="wall-sources">
+          <div
+            className={`wall-source h ${wallsLeft === 0 ? 'empty' : ''}`}
+            onMouseDown={(e) => handleDragStart('h', e)}
+            onTouchStart={(e) => handleDragStart('h', e)}
+          >
+            <div className="wall-source-preview wall-h-mini" />
+            <span>Horizontal</span>
+          </div>
+          <div
+            className={`wall-source v ${wallsLeft === 0 ? 'empty' : ''}`}
+            onMouseDown={(e) => handleDragStart('v', e)}
+            onTouchStart={(e) => handleDragStart('v', e)}
+          >
+            <div className="wall-source-preview wall-v-mini" />
+            <span>Vertical</span>
+          </div>
+        </div>
       </div>
+
+      {/* Floating drag indicator */}
+      {dragState && (
+        <div
+          className="drag-ghost"
+          style={{ left: dragState.x, top: dragState.y }}
+        >
+          <div className={`drag-wall ${dragState.orient === 'h' ? 'drag-h' : 'drag-v'}`} />
+        </div>
+      )}
 
       {/* Actions */}
       <div className="actions">
-        <button className="action-btn" onClick={resetGame}>New Game</button>
+        <button className="action-btn" onClick={resetGame}>Restart</button>
+        <button className="action-btn danger" onClick={onBack}>Resign</button>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -204,27 +359,25 @@ function PlayerCards({ current_player, p1_walls, p2_walls, winner }) {
   );
 }
 
-function BoardGrid({ p1_pos, p2_pos, current_player, legal_moves, mode, winner, onCellClick, onCellHover }) {
+function BoardGrid({ p1_pos, p2_pos, current_player, legal_moves, winner, onCellClick }) {
   const cells = [];
 
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
       const isP1 = p1_pos.r === r && p1_pos.c === c;
       const isP2 = p2_pos.r === r && p2_pos.c === c;
-      const isLegal = mode === 'move' && winner === 0 &&
+      const isLegal = winner === 0 &&
         legal_moves.some(m => m[0] === 'move' && m[1] === r && m[2] === c);
 
       let goalClass = '';
-      if (r === 8) goalClass = 'goal-p1'; // p1 races to row 8
-      if (r === 0) goalClass = 'goal-p2'; // p2 races to row 0
+      if (r === 8) goalClass = 'goal-p1';
+      if (r === 0) goalClass = 'goal-p2';
 
       cells.push(
         <div
           key={`${r}-${c}`}
           className={`cell ${isLegal ? 'legal-move' : ''} ${goalClass}`}
           onClick={() => onCellClick(r, c)}
-          onMouseEnter={() => onCellHover(r, c)}
-          onMouseLeave={() => onCellHover(-1, -1)}
         >
           {isP1 && <div className={`pawn p1 ${current_player === 1 && winner === 0 ? 'active' : ''}`} />}
           {isP2 && <div className={`pawn p2 ${current_player === 2 && winner === 0 ? 'active' : ''}`} />}
@@ -274,9 +427,8 @@ function Walls({ h_walls, v_walls }) {
   return <>{walls}</>;
 }
 
-function WallPreviewEl({ preview }) {
+function WallPreviewEl({ orient, r, c }) {
   const pct = 100 / BOARD_SIZE;
-  const { orient, r, c } = preview;
 
   if (orient === 'h') {
     return (
