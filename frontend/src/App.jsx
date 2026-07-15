@@ -248,7 +248,7 @@ function GameScreen({ gameState, setGameState, onBack }) {
 
   if (!gameState) return null;
 
-  const { p1_pos, p2_pos, p1_walls, p2_walls, current_player, h_walls, v_walls, winner, legal_moves } = gameState;
+  const { p1_pos, p2_pos, p1_walls, p2_walls, current_player, h_walls, v_walls, winner, legal_moves, move_history } = gameState;
   const wallsLeft = current_player === 1 ? p1_walls : p2_walls;
 
   return (
@@ -328,6 +328,11 @@ function GameScreen({ gameState, setGameState, onBack }) {
           </div>
         </div>
       </div>
+
+      {/* Move History */}
+      {move_history && move_history.length > 0 && (
+        <MoveHistory moves={move_history} />
+      )}
 
       {/* Floating drag indicator */}
       {dragState && (
@@ -442,6 +447,32 @@ function Walls({ h_walls, v_walls }) {
   }
 
   return <>{walls}</>;
+}
+
+function MoveHistory({ moves }) {
+  const pairs = [];
+  for (let i = 0; i < moves.length; i += 2) {
+    pairs.push({
+      num: Math.floor(i / 2) + 1,
+      red: moves[i]?.notation || '',
+      blue: moves[i + 1]?.notation || '',
+    });
+  }
+
+  return (
+    <div className="move-history">
+      <div className="move-history-title">Move History</div>
+      <div className="move-history-list">
+        {pairs.map(p => (
+          <div key={p.num} className="move-row">
+            <span className="move-num">{p.num}.</span>
+            <span className="move-red">{p.red}</span>
+            <span className="move-blue">{p.blue}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function WallPreviewEl({ orient, r, c }) {
