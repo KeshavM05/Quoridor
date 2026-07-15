@@ -223,7 +223,7 @@ button:active {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin: 4px 0 2px;
+  margin: 3px 0;
   flex-shrink: 0;
 }
 
@@ -250,21 +250,19 @@ button:active {
   justify-content: center;
   align-items: center;
   min-height: 0;
-  min-width: 0;
   overflow: hidden;
   padding: 4px 0;
 }
 
 .board-frame {
   position: relative;
-  /* size to fit available height while staying square */
-  width: min(100%, calc(100vh - 280px));
+  width: 100%;
   aspect-ratio: 1 / 1;
   max-height: 100%;
   background: var(--board-frame);
-  border-radius: 16px;
+  border-radius: 14px;
   box-shadow:
-    0 12px 32px rgba(0,0,0,0.5),
+    0 8px 24px rgba(0,0,0,0.5),
     inset 0 1px 0 rgba(255,255,255,0.05),
     inset 0 -2px 6px rgba(0,0,0,0.3);
   padding: 10px;
@@ -496,14 +494,15 @@ button:active {
 /* ===== Wall Dock (drag source) ===== */
 .wall-dock {
   flex-shrink: 0;
-  border-radius: 14px;
-  padding: 8px 14px;
+  border-radius: 12px;
+  padding: 7px 12px;
+  margin-top: 6px;
   background: linear-gradient(180deg, #1b2438, #141c2d);
   border: 1px solid rgba(255,255,255,0.06);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -2px 5px rgba(0,0,0,0.26);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -2px 5px rgba(0,0,0,0.26);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .wall-dock-label {
@@ -595,38 +594,6 @@ button:active {
   box-shadow: 0 0 14px rgba(251,191,36,0.5), 2px 0 8px rgba(0,0,0,0.3);
 }
 
-/* ===== Action buttons ===== */
-.actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 4px 0;
-  flex-shrink: 0;
-}
-
-.action-btn {
-  padding: 6px 16px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.3px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-}
-
-.action-btn.danger {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #ef4444;
-}
-
-.action-btn.primary {
-  background: var(--accent);
-  border-color: transparent;
-  color: #000;
-}
 
 /* ===== Winner overlay ===== */
 .winner-banner {
@@ -860,6 +827,7 @@ button:active {
 .game-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 4px;
   flex-shrink: 0;
 }
@@ -872,6 +840,20 @@ button:active {
   padding: 4px 0;
 }
 .back-btn:active {
+  transform: none;
+  opacity: 0.7;
+}
+
+.giveup-btn {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--subtle);
+  background: rgba(255,255,255,0.04);
+  border-radius: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+}
+.giveup-btn:active {
   transform: none;
   opacity: 0.7;
 }

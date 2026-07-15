@@ -239,9 +239,10 @@ function GameScreen({ gameState, setGameState, onBack }) {
 
   return (
     <div className="game-screen">
-      {/* Header with back */}
+      {/* Header with back + give up */}
       <div className="game-header">
         <button className="back-btn" onClick={onBack}>‹ Menu</button>
+        <button className="giveup-btn" onClick={resetGame}>⚑ Give up</button>
       </div>
 
       {/* Player cards */}
@@ -324,11 +325,6 @@ function GameScreen({ gameState, setGameState, onBack }) {
         </div>
       )}
 
-      {/* Actions */}
-      <div className="actions">
-        <button className="action-btn" onClick={resetGame}>Restart</button>
-        <button className="action-btn danger" onClick={onBack}>Resign</button>
-      </div>
     </div>
   );
 }
