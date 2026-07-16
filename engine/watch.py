@@ -44,7 +44,7 @@ app.add_middleware(
 class WatchState:
     def __init__(self):
         self.game: QuoridorGame = None
-        self.move_delay: float = 1.0  # seconds between moves
+        self.move_delay: float = 0.3
         self.is_running: bool = False
         self.is_paused: bool = False
         self.move_count: int = 0
@@ -54,32 +54,52 @@ class WatchState:
         self.task: asyncio.Task = None
         self.model: QuoridorNet = None
         self.mcts: MCTS = None
+        self.red_model: QuoridorNet = None
+        self.red_mcts: MCTS = None
+        self.blue_model: QuoridorNet = None
+        self.blue_mcts: MCTS = None
         self.device: str = 'cpu'
 
-    def init_model(self):
-        """Load or initialize the neural network and MCTS."""
-        if self.model is not None:
-            return
-
+    def load_model(self, model_id='best'):
+        """Load a specific model by ID. Returns a (model, mcts) tuple."""
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.model = QuoridorNet()
-        self.model.to(self.device)
+        model = QuoridorNet()
+        model.to(self.device)
 
-        # Try to load a trained checkpoint if available
-        checkpoint_path = os.path.join(os.path.dirname(__file__), 'checkpoint.pt')
-        if os.path.exists(checkpoint_path):
-            checkpoint = torch.load(checkpoint_path, map_location=self.device)
-            if 'model_state_dict' in checkpoint:
-                self.model.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                self.model.load_state_dict(checkpoint)
-            print(f"Loaded model checkpoint from {checkpoint_path}")
+        if model_id == 'random':
+            print(f"Using random (untrained) model")
         else:
-            print("No checkpoint found, using random model weights for self-play")
+            checkpoint_path = self._resolve_model_path(model_id)
+            if checkpoint_path and os.path.exists(checkpoint_path):
+                checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
+                model.load_state_dict(checkpoint)
+                print(f"Loaded model: {model_id} from {checkpoint_path}")
+            else:
+                print(f"Model '{model_id}' not found, using random weights")
 
-        self.model.eval()
-        # Use fewer simulations for watch mode to keep moves fast
-        self.mcts = MCTS(self.model, device=self.device, num_simulations=50)
+        model.eval()
+        mcts = MCTS(model, device=self.device, num_simulations=50)
+        return model, mcts
+
+    def _resolve_model_path(self, model_id):
+        """Find the checkpoint file for a model ID."""
+        base = os.path.dirname(__file__)
+        if model_id == 'best':
+            for path in [
+                os.path.join(base, 'checkpoints', 'best_model.pt'),
+                os.path.join(base, 'checkpoint.pt'),
+            ]:
+                if os.path.exists(path):
+                    return path
+        elif model_id.startswith('iter_'):
+            path = os.path.join(base, 'checkpoints', f'model_{model_id}.pt')
+            if os.path.exists(path):
+                return path
+        return None
+
+    def init_model(self):
+        """Load default model for backward compatibility."""
+        self.model, self.mcts = self.load_model('best')
 
 
 state = WatchState()
@@ -121,7 +141,11 @@ async def broadcast(message: dict):
 
 async def self_play_loop():
     """Main loop: plays games continuously, broadcasting each move."""
-    state.init_model()
+    # Use per-side models if set, otherwise fall back to default
+    if state.red_mcts is None or state.blue_mcts is None:
+        state.init_model()
+        state.red_mcts = state.mcts
+        state.blue_mcts = state.mcts
 
     while state.is_running:
         # Start a new game
@@ -142,11 +166,12 @@ async def self_play_loop():
             if not state.is_running:
                 break
 
-            # Use MCTS to select a move
+            # Use MCTS to select a move (use correct model per player)
             try:
-                action_probs = state.mcts.search(
+                current_mcts = state.red_mcts if state.game.current_player == 1 else state.blue_mcts
+                action_probs = current_mcts.search(
                     state.game,
-                    temperature=0.5,  # Some randomness for variety
+                    temperature=0.5,
                     add_noise=True
                 )
             except Exception as e:
@@ -250,12 +275,28 @@ async def websocket_watch(websocket: WebSocket):
 class SpeedRequest(BaseModel):
     delay: float
 
+class StartRequest(BaseModel):
+    red_model: str = 'best'
+    blue_model: str = 'best'
+
+
+@app.get("/watch/models")
+async def list_models():
+    """List available model checkpoints."""
+    base = os.path.join(os.path.dirname(__file__), 'checkpoints')
+    models = []
+    if os.path.exists(base):
+        for f in sorted(os.listdir(base)):
+            if f.startswith('model_iter_') and f.endswith('.pt'):
+                name = f.replace('model_', '').replace('.pt', '')
+                models.append(name)
+    return models
+
 
 @app.post("/watch/start")
-async def start_watch():
+async def start_watch(req: StartRequest = StartRequest()):
     """Start a new self-play game (or restart if one is running)."""
     if state.is_running:
-        # Stop current game
         state.is_running = False
         if state.task and not state.task.done():
             state.task.cancel()
@@ -264,11 +305,15 @@ async def start_watch():
             except (asyncio.CancelledError, Exception):
                 pass
 
+    # Load selected models for each side
+    state.red_model, state.red_mcts = state.load_model(req.red_model)
+    state.blue_model, state.blue_mcts = state.load_model(req.blue_model)
+
     state.is_running = True
     state.is_paused = False
     state.task = asyncio.create_task(self_play_loop())
 
-    return {"status": "started", "delay": state.move_delay}
+    return {"status": "started", "delay": state.move_delay, "red": req.red_model, "blue": req.blue_model}
 
 
 @app.post("/watch/stop")
