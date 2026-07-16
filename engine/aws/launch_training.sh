@@ -15,12 +15,13 @@
 set -e
 
 # ============ CONFIG ============
-INSTANCE_TYPE="g5.xlarge"           # A10G GPU, $1/hr
-AMI="ami-0a0e5d9c7acc336f1"        # Ubuntu 22.04 Deep Learning AMI (us-east-1)
-KEY_NAME="barricade-key"            # Your SSH key pair name
-SECURITY_GROUP="sg-default"         # Security group allowing SSH (port 22)
+INSTANCE_TYPE="g5.xlarge"           # A10G GPU, ~$1/hr
+AMI="ami-072e487908654a0d2"        # Deep Learning Base OSS Nvidia, Ubuntu 22.04 (us-east-1)
+KEY_NAME="vla-key-pair"             # Your SSH key pair name
+SECURITY_GROUP="barricade-sg"       # Security group allowing SSH (port 22)
 REGION="us-east-1"
-VOLUME_SIZE=50                      # GB
+VOLUME_SIZE=100                     # GB
+KEY_PATH="D:/Downloads/vla-key-pair.pem"
 
 # Training config
 ITERATIONS=50
@@ -57,7 +58,7 @@ apt-get update -y
 apt-get install -y python3-pip git
 
 # Clone repo (or copy — we'll use git)
-git clone https://github.com/YOUR_USERNAME/Barricade.git barricade || true
+git clone https://github.com/KeshavM05/Quoridor.git barricade || true
 cd barricade/engine
 
 # Install Python deps with CUDA PyTorch

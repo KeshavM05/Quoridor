@@ -4,8 +4,9 @@
 
 set -e
 
-KEY_NAME="barricade-key"
-REGION="us-east-1"
+KEY_NAME="vla-key-pair"
+KEY_PATH="D:/Downloads/vla-key-pair.pem"
+REGION="us-east-2"
 
 if [ ! -f .training_instance ]; then
     echo "No training instance found. Run launch_training.sh first."
@@ -29,7 +30,7 @@ echo "=== Training Status ==="
 echo "Instance: $INSTANCE_ID ($PUBLIC_IP)"
 echo ""
 
-ssh -i ~/.ssh/${KEY_NAME}.pem -o StrictHostKeyChecking=no ubuntu@$PUBLIC_IP << 'EOF'
+ssh -i "$KEY_PATH" -o StrictHostKeyChecking=no ubuntu@$PUBLIC_IP << 'EOF'
 echo "--- Last 20 lines of training log ---"
 tail -20 /home/ubuntu/barricade/train.log 2>/dev/null || echo "(no log yet — setup still running)"
 echo ""

@@ -237,7 +237,7 @@ async def websocket_watch(websocket: WebSocket):
                     state.is_paused = False
                 elif msg.get("action") == "speed":
                     delay = msg.get("delay", 1.0)
-                    state.move_delay = max(0.1, min(5.0, float(delay)))
+                    state.move_delay = max(0.01, min(5.0, float(delay)))
             except (json.JSONDecodeError, ValueError):
                 pass
     except WebSocketDisconnect:
@@ -294,7 +294,7 @@ async def pause_watch():
 @app.post("/watch/speed")
 async def set_speed(req: SpeedRequest):
     """Change the delay between moves (seconds)."""
-    state.move_delay = max(0.1, min(5.0, req.delay))
+    state.move_delay = max(0.01, min(5.0, req.delay))
     return {"delay": state.move_delay}
 
 

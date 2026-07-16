@@ -111,7 +111,9 @@ def training_loop(
     batch_size=64,
     lr=0.001,
     checkpoint_dir='checkpoints',
-    device=None
+    device=None,
+    parallel=None,
+    parallel_batch_size=16
 ):
     """Main AlphaZero training loop."""
 
@@ -164,7 +166,9 @@ def training_loop(
             model, device=device,
             num_games=num_self_play_games,
             num_simulations=num_simulations,
-            record_replays=True
+            record_replays=True,
+            parallel=parallel,
+            batch_size=parallel_batch_size
         )
         print(f"  Generated {len(examples)} training positions in {time.time()-t0:.1f}s")
         replay_buffer.extend(examples)
@@ -274,6 +278,12 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--checkpoint-dir', type=str, default='checkpoints')
+    parser.add_argument('--parallel', action='store_true', default=None,
+                        help='Force parallel self-play with batched inference (auto-detected on CUDA)')
+    parser.add_argument('--no-parallel', dest='parallel', action='store_false',
+                        help='Force sequential self-play (original behavior)')
+    parser.add_argument('--parallel-batch-size', type=int, default=16,
+                        help='Number of games to play simultaneously in parallel mode (default: 16)')
     args = parser.parse_args()
 
     training_loop(
@@ -285,5 +295,7 @@ if __name__ == '__main__':
         batch_size=args.batch_size,
         lr=args.lr,
         device=args.device,
-        checkpoint_dir=args.checkpoint_dir
+        checkpoint_dir=args.checkpoint_dir,
+        parallel=args.parallel,
+        parallel_batch_size=args.parallel_batch_size
     )

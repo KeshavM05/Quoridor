@@ -4,8 +4,9 @@
 
 set -e
 
-KEY_NAME="barricade-key"
-REGION="us-east-1"
+KEY_NAME="vla-key-pair"
+KEY_PATH="D:/Downloads/vla-key-pair.pem"
+REGION="us-east-2"
 
 if [ ! -f .training_instance ]; then
     echo "No training instance found."
@@ -24,12 +25,12 @@ echo "Downloading model from $PUBLIC_IP..."
 
 mkdir -p ../checkpoints
 
-scp -i ~/.ssh/${KEY_NAME}.pem -o StrictHostKeyChecking=no \
+scp -i "$KEY_PATH" -o StrictHostKeyChecking=no \
     ubuntu@$PUBLIC_IP:/home/ubuntu/barricade/engine/checkpoints/best_model.pt \
     ../checkpoints/best_model.pt
 
 # Also grab the metrics
-scp -i ~/.ssh/${KEY_NAME}.pem -o StrictHostKeyChecking=no \
+scp -i "$KEY_PATH" -o StrictHostKeyChecking=no \
     ubuntu@$PUBLIC_IP:/home/ubuntu/barricade/engine/checkpoints/metrics.json \
     ../checkpoints/metrics.json 2>/dev/null || true
 

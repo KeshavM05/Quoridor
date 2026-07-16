@@ -29,3 +29,5 @@ Thumbs.db
 
 # Reference assets (scraped CSS from target sites)
 reference/*_styles.css
+.training_instance
+vla-pub.pub

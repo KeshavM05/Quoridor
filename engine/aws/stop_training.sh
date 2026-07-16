@@ -4,7 +4,7 @@
 
 set -e
 
-REGION="us-east-1"
+REGION="us-east-2"
 
 if [ ! -f .training_instance ]; then
     echo "No training instance found."

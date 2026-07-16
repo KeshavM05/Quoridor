@@ -96,7 +96,7 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
 
 
 def generate_self_play_data(model, device='cpu', num_games=100, num_simulations=100,
-                            record_replays=False):
+                            record_replays=False, parallel=None, batch_size=16):
     """
     Generate training data from multiple self-play games.
 
@@ -106,6 +106,9 @@ def generate_self_play_data(model, device='cpu', num_games=100, num_simulations=
         num_games: number of games to play
         num_simulations: MCTS simulations per move
         record_replays: if True, also record and return full game replays
+        parallel: if True, use batched parallel self-play for better GPU utilization.
+                  If None, auto-detect (use parallel on CUDA devices).
+        batch_size: number of games to play simultaneously when parallel=True
 
     Returns:
         If record_replays is False:
@@ -114,6 +117,20 @@ def generate_self_play_data(model, device='cpu', num_games=100, num_simulations=
             Tuple of (examples, avg_game_length, game_replays) where
             game_replays is a list of replay dicts
     """
+    # Auto-detect: use parallel on GPU, sequential on CPU
+    if parallel is None:
+        parallel = (device != 'cpu')
+
+    if parallel:
+        from parallel_mcts import generate_self_play_data_parallel
+        print(f"  Using parallel self-play (batch_size={batch_size}, device={device})")
+        return generate_self_play_data_parallel(
+            model, device=device, num_games=num_games,
+            num_simulations=num_simulations, batch_size=batch_size,
+            record_replays=record_replays
+        )
+
+    # Original sequential self-play (fallback)
     all_examples = []
     game_lengths = []
     game_replays = []
