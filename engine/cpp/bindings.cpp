@@ -26,7 +26,8 @@ using namespace quoridor;
  * Encode a game state into a numpy array of shape (12, 9, 9).
  */
 py::array_t<float> py_encode_state(const QuoridorGame& game) {
-    auto result = py::array_t<float>({12, 9, 9});
+    std::vector<py::ssize_t> shape = {12, 9, 9};
+    auto result = py::array_t<float>(shape);
     auto buf = result.mutable_unchecked<3>();
 
     // Get a pointer to the contiguous data
@@ -79,7 +80,8 @@ py::array_t<float> py_mcts_search(
         size_t batch_sz = states_batch.size();
 
         // Create numpy array of shape (batch_size, 12, 9, 9)
-        auto states_np = py::array_t<float>({static_cast<py::ssize_t>(batch_sz), 12, 9, 9});
+        std::vector<py::ssize_t> shape = {static_cast<py::ssize_t>(batch_sz), 12, 9, 9};
+        auto states_np = py::array_t<float>(shape);
         float* states_ptr = static_cast<float*>(states_np.mutable_data());
         for (size_t i = 0; i < batch_sz; i++) {
             std::memcpy(states_ptr + i * 12 * 81, states_batch[i].data(), 12 * 81 * sizeof(float));
