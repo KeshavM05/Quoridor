@@ -150,6 +150,65 @@ What happens:
 
 ---
 
+## What Happens Each Iteration (Detailed)
+
+### [1/3] Self-play (the slowest part)
+
+The AI plays 100 games against itself. Both sides use 800 MCTS simulations per move (thinking deeply before each move). Each game produces training examples.
+
+**What a training example is**:
+- Board position (what it saw) — 12×9×9 tensor
+- MCTS policy (what deep thinking concluded) — 209 probabilities
+- Value (who won, or BFS partial credit if draw) — single number [-1, +1]
+
+**Why self-play is slow**: 100 games × ~100 moves × 800 sims × neural net call per sim. Even with C++, that's millions of operations.
+
+**What makes games shorter over time**: As the model learns to play toward the goal, games end in 30-40 moves instead of 100+. This means later iterations are faster than early ones.
+
+### [2/3] Training (the fast part)
+
+The neural network studies all the examples (10 passes/epochs):
+
+**Policy loss** = "How wrong are my move predictions?"
+- Network predicts move probabilities
+- Compare to what MCTS concluded after 800 sims of deep thinking
+- Adjust parameters to make predictions match MCTS
+- Think of it as: MCTS is the slow careful teacher, the network is the student learning to make instant good decisions
+
+**Value loss** = "How wrong are my win/loss predictions?"
+- Network predicts who's winning from any board position
+- Compare to actual game outcomes (or BFS distance for draws)
+- Adjust parameters to be more accurate
+- This is what lets the network "feel" whether a position is good or bad
+
+**Why it's fast** (30-60 seconds): Pure matrix multiplication on GPU. No game logic, no search — just feeding boards through the network and adjusting 20M weights.
+
+### [3/3] Arena (the quality gate)
+
+New model plays 20 games against the old model. Tests if training actually made it better.
+
+- Alternates who plays Red/Blue (fairness)
+- Uses C++ MCTS for both sides
+- Win >55% of decisive games → accepted as new "best model"
+- Otherwise → rejected, keep old model, try again next iteration
+
+**Why this matters**: Training can sometimes make a model worse (it learns one thing but forgets another). The arena prevents regressions — the model can only get stronger, never weaker.
+
+**What "decisive" means**: Games where someone actually won (not draws). If all games draw, win rate = 50% = rejected. This is why draws were a problem before.
+
+### Draw Rules
+
+- Game cap: **500 moves**. If nobody wins in 500 moves → draw.
+- Draw partial credit: based on **BFS shortest path distance** to goal (not straight-line distance)
+  - Player with shorter path to goal gets positive value
+  - Player with longer path gets negative value
+  - This teaches: "being walled off = bad, clear path = good"
+- Early iterations: most games end around 80-100 moves (random play eventually stumbles to goal)
+- Later iterations: games end in 20-40 moves (intentional, efficient play)
+- Draws become rare once both models learn to play purposefully
+
+---
+
 ## What Each Metric Means
 
 ### Policy Loss (should decrease over training)
