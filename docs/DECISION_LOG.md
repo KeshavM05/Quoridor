@@ -122,6 +122,39 @@ Every problem encountered, decision made, and the reasoning behind it.
 
 ---
 
+## Problem 13: Arena using Python MCTS (5.5 hours per iteration)
+**Date**: 2026-07-17  
+**Context**: Self-play was fast (7 min with C++) but arena still used Python MCTS. 20 arena games with Python took 19,698 seconds (5.5 hours).  
+**Root cause**: `arena.py` imported from `mcts.py` (Python) instead of `quoridor_cpp`.  
+**Fix**: Rewrote `arena.py` to use `quoridor_cpp.mcts_search()` with the same batched evaluation pattern.  
+**Impact**: Arena goes from 5.5 hours → ~5 minutes per iteration.
+
+---
+
+## Problem 14: C++ self-play returned 2 values, train.py expected 3
+**Date**: 2026-07-17  
+**Context**: C++ backend doesn't record replays (returns `(examples, avg_game_length)` not the 3-tuple with replays). `train.py` crashed with `ValueError: not enough values to unpack`.  
+**Fix**: Changed `train.py` to check `len(result)` and handle both 2 and 3 return values. Set `record_replays=False` to enable C++ path.  
+**Tradeoff**: No game replays saved during C++ training. Can add replay recording to C++ later.
+
+---
+
+## Problem 15: Game cap at 100 moves was too short
+**Date**: 2026-07-17  
+**Context**: User noticed all arena games ending in draws (both models hit 100-move cap). Model hadn't learned efficient play yet — needed more room.  
+**Decision**: Raised cap back to 200 moves. C++ is fast enough that longer games don't matter much.  
+**Result**: Games can actually reach a decisive outcome instead of all being draws.
+
+---
+
+## Problem 16: Model dumps all walls before moving (4 iterations in)
+**Date**: 2026-07-17  
+**Context**: After 4 iterations, model learned walls exist but not when to use them. Places all 10 walls immediately, then walks to goal.  
+**Expected resolution**: More training iterations. By iteration 10-15 it should learn that rushing forward is better. By iteration 25+ it'll learn strategic wall timing.  
+**Not a bug**: Normal early-training behavior. The reward signal for "walls placed early = bad" takes many iterations to propagate through the network.
+
+---
+
 ## Architecture Decisions
 
 ### Why AlphaZero over simpler approaches?
