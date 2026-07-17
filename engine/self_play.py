@@ -74,8 +74,8 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
         game.play_move(move)
         move_count += 1
 
-        # Safety: cap game length (shorter = faster training iterations)
-        if move_count > 100:
+        # Safety: cap game length
+        if move_count > 200:
             break
 
     # Assign values based on game outcome

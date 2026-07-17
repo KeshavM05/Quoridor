@@ -159,17 +159,22 @@ def training_loop(
         print(f"ITERATION {iteration}/{num_iterations}")
         print(f"{'='*50}")
 
-        # 1. Self-play (with replay recording for journal)
+        # 1. Self-play
         print(f"\n[1/3] Self-play ({num_self_play_games} games, {num_simulations} sims/move)...")
         t0 = time.time()
-        examples, avg_game_length, game_replays = generate_self_play_data(
+        result = generate_self_play_data(
             model, device=device,
             num_games=num_self_play_games,
             num_simulations=num_simulations,
-            record_replays=True,
+            record_replays=False,
             parallel=parallel,
             batch_size=parallel_batch_size
         )
+        if isinstance(result, tuple) and len(result) == 3:
+            examples, avg_game_length, game_replays = result
+        else:
+            examples, avg_game_length = result
+            game_replays = []
         print(f"  Generated {len(examples)} training positions in {time.time()-t0:.1f}s")
         replay_buffer.extend(examples)
 
