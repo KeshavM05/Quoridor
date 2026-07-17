@@ -75,7 +75,7 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
         move_count += 1
 
         # Safety: cap game length
-        if move_count > 200:
+        if move_count > 500:
             break
 
     # Assign values based on game outcome
@@ -84,7 +84,15 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
 
     for state, pi, player in history:
         if winner == 0:
-            value = 0.0  # Draw (timeout)
+            # Draw — assign partial credit based on board position
+            # Player closer to their goal gets positive value
+            p1_dist = 8 - game.p1_pos[0]  # P1 wants to reach row 8
+            p2_dist = game.p2_pos[0]      # P2 wants to reach row 0
+            # Normalize to [-0.5, 0.5] range
+            if player == 1:
+                value = (p2_dist - p1_dist) / 16.0  # positive if P1 is closer
+            else:
+                value = (p1_dist - p2_dist) / 16.0  # positive if P2 is closer
         elif winner == player:
             value = 1.0
         else:
