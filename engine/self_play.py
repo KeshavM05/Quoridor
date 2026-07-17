@@ -9,9 +9,30 @@ Each game produces a list of (state, policy, value) tuples:
 
 import numpy as np
 import copy
+from collections import deque
 from game import QuoridorGame
 from model import encode_state, action_to_move, ACTION_SIZE
 from mcts import MCTS
+
+
+def _bfs_distance(game, start_pos, target_row):
+    """BFS shortest path distance from start_pos to target_row, considering walls."""
+    q = deque([(start_pos, 0)])
+    visited = set([start_pos])
+
+    while q:
+        (r, c), dist = q.popleft()
+        if r == target_row:
+            return dist
+
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < 9 and 0 <= nc < 9 and (nr, nc) not in visited:
+                if not game._is_blocked(r, c, nr, nc):
+                    visited.add((nr, nc))
+                    q.append(((nr, nc), dist + 1))
+
+    return 50  # unreachable (shouldn't happen with valid game state)
 
 # Try to import C++ backend for 100-1000x speedup
 try:
@@ -84,15 +105,16 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
 
     for state, pi, player in history:
         if winner == 0:
-            # Draw — assign partial credit based on board position
-            # Player closer to their goal gets positive value
-            p1_dist = 8 - game.p1_pos[0]  # P1 wants to reach row 8
-            p2_dist = game.p2_pos[0]      # P2 wants to reach row 0
-            # Normalize to [-0.5, 0.5] range
+            # Draw — assign partial credit based on BFS shortest path distance
+            # Uses actual path length (accounts for walls) not straight-line distance
+            p1_dist = _bfs_distance(game, game.p1_pos, 8)
+            p2_dist = _bfs_distance(game, game.p2_pos, 0)
+            # Normalize to [-0.5, 0.5] — closer to goal (shorter path) = better
+            max_dist = 30.0  # rough max BFS distance on 9x9 with walls
             if player == 1:
-                value = (p2_dist - p1_dist) / 16.0  # positive if P1 is closer
+                value = (p2_dist - p1_dist) / (2 * max_dist)
             else:
-                value = (p1_dist - p2_dist) / 16.0  # positive if P2 is closer
+                value = (p1_dist - p2_dist) / (2 * max_dist)
         elif winner == player:
             value = 1.0
         else:
