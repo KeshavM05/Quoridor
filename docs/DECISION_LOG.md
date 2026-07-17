@@ -155,6 +155,33 @@ Every problem encountered, decision made, and the reasoning behind it.
 
 ---
 
+## Problem 17: Network too small + all games drawing
+**Date**: 2026-07-17  
+**Context**: After 4 iterations, model played 100-move games that all drew. Network (6 blocks, 2.4M params) couldn't hold "move forward" AND "use walls strategically" simultaneously.  
+**Decision**: Upgrade to 12 blocks, 256 channels (~20M params). Also raise game cap to 500, add 800 sims, add partial credit for draws, increase to 200 iterations.  
+**Reasoning**: 
+- 20M params is the sweet spot for ~2M training positions. More would risk overfitting (memorizing specific positions instead of learning general strategy). Less can't hold complex strategies.
+- 800 sims produces decisive games — someone actually wins instead of both wandering to a draw.
+- Partial credit (value based on distance to goal) teaches the network from drawn games.
+- 500 move cap lets games resolve naturally.
+**Cost**: ~$120 for full run (~5 days at $1/hr)
+
+---
+
+## Problem 18: Why not use a bigger network (44M+ params)?
+**Date**: 2026-07-17  
+**Context**: AlphaZero used ~44M params for chess. Why not do the same?  
+**Decision**: Stay at 20M params.  
+**Reasoning**:
+- Overfitting risk: more parameters than training examples = network memorizes positions instead of learning patterns.
+- AlphaZero played 44 MILLION games. We play ~20,000. Our data volume supports ~20M params.
+- Quoridor has ~10^15 positions. We show the network ~2M (0.0000000002%). It MUST generalize.
+- Memorization is only good if you've seen ALL states (like tic-tac-toe). For Quoridor that's impossible.
+- GPU memory isn't the constraint (using 395MB of 24GB). Data volume is.
+**Would reconsider if**: We increased to 500+ games/iteration × 500+ iterations (= 250K+ games worth of data).
+
+---
+
 ## Architecture Decisions
 
 ### Why AlphaZero over simpler approaches?

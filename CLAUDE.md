@@ -139,6 +139,21 @@ tensorboard --logdir engine/runs
 - **Invalid drop**: wall returns to dock (rubber-band animation)
 - Walls snap to **intersection points** between cells (the grid lines)
 
+## Decision Logging
+
+Whenever a problem is encountered, a design decision is made, or a tradeoff is chosen, **document it in `docs/DECISION_LOG.md`** with:
+- Date
+- Context (what was happening)
+- Root cause (if it's a bug)
+- Decision (what we chose to do)
+- Reasoning (WHY — the key part)
+- Alternatives considered
+- Impact/tradeoff
+
+Also document architecture decisions (why X over Y) and ML decisions (why these hyperparams, why this size network, etc.) in the same file.
+
+The user wants to learn from this project — every decision should be explained in plain language with analogies where helpful.
+
 ## Cost Estimates (AWS Training)
 
 | Instance | GPU | Cost/hr | Speed | 50 iterations |
