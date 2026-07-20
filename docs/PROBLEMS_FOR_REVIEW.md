@@ -104,11 +104,54 @@ After 33+ iterations in one run, the model still dumps all walls randomly or not
 
 ---
 
+## Problem 6: Local Optimum — Model Stuck at "Rush Forward"
+
+**Date**: 2026-07-20 (latest issue)
+
+After implementing wall filtering, tempo fixes, γ-discounting, 60-move cap, asymmetric games, and data augmentation, the model is stuck in a local optimum.
+
+**Symptom**: Policy loss flat at 0.88-0.91 across iterations. Game length flat at 46-49 moves. No improvement iteration to iteration. Model just rushes forward (pre-trained behavior) and self-play data only reinforces "rushing works."
+
+**Root cause**: The pre-trained model learned "rush forward" so strongly that:
+- Self-play: both sides rush → game ends in ~48 moves → training data says "rushing = good"
+- Walls never get explored because rushing beats random/bad walls
+- Network never sees evidence that walls are useful
+- Circular: no wall data → no wall learning → no wall data
+
+**What we tried that DIDN'T break the local optimum**:
+- Wall filtering in MCTS (helps MCTS pick good walls, but network never asks for walls)
+- Asymmetric games 20% (one player has 0 walls — but the 10-wall player still just rushes)
+- Higher learning rate
+- More iterations (just confirms rushing is good)
+- Auto-accept (accepts models that are same quality, doesn't drive improvement)
+
+**Options we're considering to force wall exploration**:
+
+1. **Forced wall moves**: In 30% of self-play games, first 3-5 moves MUST be wall placements (from filtered candidates). Creates training data showing "what happens when walls exist" — some games the wall-placer wins.
+
+2. **Higher exploration noise**: Increase Dirichlet ε from 0.25 to 0.5 for first 20 iterations. MCTS occasionally picks wall moves even when network says "rush."
+
+3. **Two-phase training**: Phase 1 (done) = rush. Phase 2 = freeze rushing weights, train only wall decision head. Like teaching driving straight first, then turns.
+
+4. **Immediate wall bonus**: When a wall increases opponent BFS by 3+, give +0.2 value bonus to that position regardless of game outcome. Direct reward for effective wall placement.
+
+5. **Opponent modeling**: In arena, pit current model against a "wall-heavy" heuristic bot that places 5 walls then rushes. If model can't navigate walls, it loses → learns to handle walls.
+
+6. **Curriculum of opponents**: Instead of self-play only, mix in games against:
+   - Pure rusher (no walls)
+   - Wall spammer (places 5 random walls then rushes)
+   - Strategic waller (places walls on opponent shortest path then rushes)
+   Model must beat all three → forced to learn both rushing AND wall navigation.
+
+---
+
 ## The Core Question
 
-How do we get the model to:
-1. Play shorter, decisive games (30-40 moves, not 250)
-2. Learn wall placement timing and positioning
-3. Actually improve in playing strength each iteration (not just prediction accuracy)
+How do we break the model out of the "rush forward" local optimum and get it to:
+1. Discover that well-timed walls can win games faster than pure rushing
+2. Learn WHEN to place walls (timing) vs WHEN to move (tempo)
+3. Actually improve in playing strength each iteration
 
-The model CAN walk straight (pre-training proved that). The gap is going from "walks straight" to "uses walls strategically to win faster."
+The model CAN walk straight (pre-training proved that). The model CAN identify good wall positions (wall filtering in MCTS finds them). The gap is: the NETWORK never learns to REQUEST wall moves because it never sees evidence that walls lead to winning.
+
+This is a classic exploration-exploitation problem: the model exploits "rushing" and never explores "walls" because any single wall attempt looks worse than rushing in the short term.
