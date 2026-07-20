@@ -451,16 +451,30 @@ button:active {
 
 .wall-h {
   height: 6px;
-  background: linear-gradient(180deg, #f8fafc, #cbd5e1);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.8);
   animation: wall-enter-h 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .wall-v {
   width: 6px;
-  background: linear-gradient(90deg, #f8fafc, #cbd5e1);
-  box-shadow: 2px 0 6px rgba(0,0,0,0.3), inset 1px 0 0 rgba(255,255,255,0.8);
   animation: wall-enter-v 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.wall.p1 {
+  background: linear-gradient(180deg, #ff6b6b, #c0392b);
+  box-shadow: 0 2px 6px rgba(239,68,68,0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+}
+.wall.p1.wall-v {
+  background: linear-gradient(90deg, #ff6b6b, #c0392b);
+  box-shadow: 2px 0 6px rgba(239,68,68,0.4), inset 1px 0 0 rgba(255,255,255,0.3);
+}
+
+.wall.p2 {
+  background: linear-gradient(180deg, #74b9ff, #2980b9);
+  box-shadow: 0 2px 6px rgba(59,130,246,0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+}
+.wall.p2.wall-v {
+  background: linear-gradient(90deg, #74b9ff, #2980b9);
+  box-shadow: 2px 0 6px rgba(59,130,246,0.4), inset 1px 0 0 rgba(255,255,255,0.3);
 }
 
 @keyframes wall-enter-h {

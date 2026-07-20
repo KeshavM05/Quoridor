@@ -528,7 +528,7 @@ function Walls({ h_walls, v_walls }) {
         walls.push(
           <div
             key={`hw-${r}-${c}`}
-            className="wall wall-h"
+            className={`wall wall-h ${r < 4 ? 'p2' : 'p1'}`}
             style={{
               top: `calc(${(r + 1) * pct}% - 3px)`,
               left: `calc(${c * pct}% + 2px)`,
@@ -541,7 +541,7 @@ function Walls({ h_walls, v_walls }) {
         walls.push(
           <div
             key={`vw-${r}-${c}`}
-            className="wall wall-v"
+            className={`wall wall-v ${r < 4 ? 'p2' : 'p1'}`}
             style={{
               top: `calc(${r * pct}% + 2px)`,
               left: `calc(${(c + 1) * pct}% - 3px)`,

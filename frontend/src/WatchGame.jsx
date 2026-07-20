@@ -263,7 +263,7 @@ function WatchWalls({ h_walls, v_walls }) {
     for (let c = 0; c < 8; c++) {
       if (h_walls[r][c]) {
         walls.push(
-          <div key={`hw-${r}-${c}`} className="wall wall-h" style={{
+          <div key={`hw-${r}-${c}`} className={`wall wall-h ${r < 4 ? 'p2' : 'p1'}`} style={{
             top: `calc(${(r + 1) * pct}% - 3px)`,
             left: `calc(${c * pct}% + 2px)`,
             width: `calc(${2 * pct}% - 0px)`,
@@ -272,7 +272,7 @@ function WatchWalls({ h_walls, v_walls }) {
       }
       if (v_walls[r][c]) {
         walls.push(
-          <div key={`vw-${r}-${c}`} className="wall wall-v" style={{
+          <div key={`vw-${r}-${c}`} className={`wall wall-v ${r < 4 ? 'p2' : 'p1'}`} style={{
             top: `calc(${r * pct}% + 2px)`,
             left: `calc(${(c + 1) * pct}% - 3px)`,
             height: `calc(${2 * pct}% - 0px)`,
