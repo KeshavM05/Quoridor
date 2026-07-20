@@ -68,6 +68,7 @@ export default function WatchGame({ onBack }) {
 
   const startGame = async () => {
     try {
+      setGameState(null);
       await fetch(`${API_URL}/watch/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
