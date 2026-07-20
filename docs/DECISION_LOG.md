@@ -182,6 +182,27 @@ Every problem encountered, decision made, and the reasoning behind it.
 
 ---
 
+## Problem 19: C++ self-play had 100-move cap (not 500)
+**Date**: 2026-07-20  
+**Context**: After fixing game cap to 500 in Python `self_play.py`, the C++ wrapper `self_play_game_cpp()` still had `if move_count > 100`. Every game drew at exactly 101 moves. Value was always ~0, model learned nothing about winning.  
+**Root cause**: Two separate cap locations — Python path (updated) and C++ path (not updated).  
+**Fix**: `sed -i 's/if move_count > 100:/if move_count > 500:/' self_play.py`  
+**Impact**: This was THE bug that wasted 3 days. All training signal was zeros because no game ever had a winner.  
+**Lesson**: When changing game logic, grep for ALL occurrences across ALL code paths.
+
+---
+
+## Problem 20: Cold start — model can't bootstrap from random
+**Date**: 2026-07-20  
+**Context**: After fixing the cap, the model still couldn't beat random (50/50 for 33 iterations). Random MCTS outputs near-random policies. Training on random policies → model stays random. Circular problem.  
+**Decision**: Supervised pre-training on BFS shortest path policy.  
+**Implementation**: Generate 2000 games where both players follow greedy shortest-path moves (using C++ for speed). Train network for 30 epochs on this data. Takes 60 seconds total.  
+**Result**: Model immediately walks straight toward goal. First arena: 20W/0L/20D (100% win rate). Training is now productive.  
+**Why this isn't "cheating"**: We only teach "move forward." The model discovers wall strategy, jumps, path manipulation, timing — all through self-play. The pre-training just breaks the bootstrap problem.  
+**Alternative considered**: Starting on a smaller 5x5 board. Still valid for future — could do 5x5 pre-training then transfer to 9x9.
+
+---
+
 ## Architecture Decisions
 
 ### Why AlphaZero over simpler approaches?
