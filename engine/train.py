@@ -304,6 +304,28 @@ def training_loop(
             torch.save(model.state_dict(), best_path)
             torch.save(model.state_dict(),
                        os.path.join(checkpoint_dir, f'model_iter_{iteration}.pt'))
+            # Update model registry
+            import json
+            registry_path = os.path.join(checkpoint_dir, 'models.json')
+            try:
+                registry = json.load(open(registry_path)) if os.path.exists(registry_path) else {"best_model": {}, "checkpoints": {}}
+            except:
+                registry = {"best_model": {}, "checkpoints": {}}
+            model_info = {
+                "file": f"model_iter_{iteration}.pt",
+                "run": os.path.basename(journal.run_dir) if hasattr(journal, 'run_dir') else "unknown",
+                "iteration": iteration,
+                "method": f"AlphaZero self-play (γ={gamma}, cap={max_game_moves}, sims={self_play_sims})",
+                "params": "20M (12 blocks, 256ch)",
+                "policy_loss": float(epoch_losses[-1][0]) if epoch_losses else None,
+                "value_loss": float(epoch_losses[-1][1]) if epoch_losses else None,
+                "win_rate": float(win_rate),
+                "avg_game_length": float(avg_game_length),
+                "date": time.strftime("%Y-%m-%d %H:%M"),
+            }
+            registry["best_model"] = model_info
+            registry["checkpoints"][f"iter_{iteration}"] = model_info
+            json.dump(registry, open(registry_path, 'w'), indent=2)
         else:
             print(f"  ✗ New model rejected — reverting")
             model.load_state_dict(old_state)

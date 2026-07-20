@@ -1,0 +1,22 @@
+{
+  "best_model": {
+    "source": "pretrain_bfs_v1",
+    "iteration": 0,
+    "run": "pretrain",
+    "method": "Supervised BFS shortest-path pre-training",
+    "description": "Trained on 2000 games of greedy forward play. Knows how to walk straight to goal. No wall strategy.",
+    "date": "2026-07-20",
+    "game_length_avg": 14,
+    "policy_loss": 0.58,
+    "notes": "Baseline for self-play training. All subsequent models build on this."
+  },
+  "checkpoints": {
+    "pretrain_bfs_v1": {
+      "file": "best_model.pt",
+      "method": "Supervised pre-training (BFS greedy)",
+      "params": "20M (12 blocks, 256ch)",
+      "training_data": "2000 games, greedy shortest-path moves",
+      "date": "2026-07-20"
+    }
+  }
+}
