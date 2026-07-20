@@ -7,12 +7,18 @@ Each game produces a list of (state, policy, value) tuples:
   - value: eventual game result from this player's perspective (target for value head)
 """
 
+import math
 import numpy as np
 import copy
 from collections import deque
 from game import QuoridorGame
 from model import encode_state, action_to_move, ACTION_SIZE
 from mcts import MCTS
+
+# Default training hyperparameters
+DEFAULT_GAMMA = 0.98            # Discount factor for outcome rewards
+DEFAULT_MAX_GAME_MOVES = 60     # Truncated game cap
+DEFAULT_ASYMMETRIC_RATIO = 0.2  # Fraction of games with asymmetric walls
 
 
 def _bfs_distance(game, start_pos, target_row):
@@ -42,8 +48,55 @@ except ImportError:
     HAS_CPP_BACKEND = False
 
 
+def _apply_asymmetric_walls(game, asymmetric_ratio):
+    """With asymmetric_ratio probability, give one player 10 walls and the other 0."""
+    if np.random.random() < asymmetric_ratio:
+        if np.random.random() < 0.5:
+            game.p1_walls = 10
+            game.p2_walls = 0
+        else:
+            game.p1_walls = 0
+            game.p2_walls = 10
+        return True
+    return False
+
+
+def _compute_discounted_values(history, winner, game, gamma, max_game_moves):
+    """
+    Compute discounted outcome rewards for training examples.
+
+    For wins/losses: V_t = z * gamma^(N-1-t)
+    For truncated games (no winner): uses BFS-based relative score with discount.
+    """
+    N = len(history)
+    training_examples = []
+
+    if winner == 0:
+        # Truncated game — compute relative BFS score
+        p1_dist = _bfs_distance(game, game.p1_pos, 8)
+        p2_dist = _bfs_distance(game, game.p2_pos, 0)
+        v_cap = math.tanh((p2_dist - p1_dist) / 4.0)  # positive if P1 is closer
+
+        for t, (state, pi, player) in enumerate(history):
+            # V_cap from this player's perspective
+            v_player = v_cap if player == 1 else -v_cap
+            # Apply discount
+            value = v_player * (gamma ** (N - 1 - t))
+            training_examples.append((state, pi, value))
+    else:
+        # Clear winner — discounted reward
+        for t, (state, pi, player) in enumerate(history):
+            z = 1.0 if winner == player else -1.0
+            value = z * (gamma ** (N - 1 - t))
+            training_examples.append((state, pi, value))
+
+    return training_examples
+
+
 def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
-                   record_moves=False):
+                   record_moves=False, gamma=DEFAULT_GAMMA,
+                   max_game_moves=DEFAULT_MAX_GAME_MOVES,
+                   asymmetric_ratio=DEFAULT_ASYMMETRIC_RATIO):
     """
     Play one full game of self-play.
 
@@ -53,6 +106,9 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
         num_simulations: MCTS simulations per move
         temp_threshold: move number after which temperature drops to 0
         record_moves: if True, also return the move sequence as a replay dict
+        gamma: discount factor for outcome rewards (default 0.98)
+        max_game_moves: truncate game after this many moves (default 60)
+        asymmetric_ratio: fraction of games with asymmetric walls (default 0.2)
 
     Returns:
         If record_moves is False:
@@ -62,6 +118,10 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
               moves: [{player, notation, move_tuple}], winner, length
     """
     game = QuoridorGame()
+
+    # Asymmetric wall curriculum: 20% of games have one player with 0 walls
+    _apply_asymmetric_walls(game, asymmetric_ratio)
+
     mcts = MCTS(model, device=device, num_simulations=num_simulations)
 
     history = []  # (encoded_state, pi, current_player)
@@ -95,31 +155,13 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
         game.play_move(move)
         move_count += 1
 
-        # Safety: cap game length
-        if move_count > 500:
+        # Truncated game cap
+        if move_count >= max_game_moves:
             break
 
-    # Assign values based on game outcome
+    # Assign discounted values based on game outcome
     winner = game.get_winner()
-    training_examples = []
-
-    for state, pi, player in history:
-        if winner == 0:
-            # Draw — assign partial credit based on BFS shortest path distance
-            # Uses actual path length (accounts for walls) not straight-line distance
-            p1_dist = _bfs_distance(game, game.p1_pos, 8)
-            p2_dist = _bfs_distance(game, game.p2_pos, 0)
-            # Normalize to [-0.5, 0.5] — closer to goal (shorter path) = better
-            max_dist = 30.0  # rough max BFS distance on 9x9 with walls
-            if player == 1:
-                value = (p2_dist - p1_dist) / (2 * max_dist)
-            else:
-                value = (p1_dist - p2_dist) / (2 * max_dist)
-        elif winner == player:
-            value = 1.0
-        else:
-            value = -1.0
-        training_examples.append((state, pi, value))
+    training_examples = _compute_discounted_values(history, winner, game, gamma, max_game_moves)
 
     if record_moves:
         replay_dict = {
@@ -132,8 +174,30 @@ def self_play_game(model, device='cpu', num_simulations=100, temp_threshold=15,
     return training_examples
 
 
+def _bfs_distance_cpp(game, start_pos, target_row):
+    """BFS shortest path distance for C++ game objects."""
+    q = deque([(start_pos, 0)])
+    visited = set([start_pos])
+
+    while q:
+        (r, c), dist = q.popleft()
+        if r == target_row:
+            return dist
+
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < 9 and 0 <= nc < 9 and (nr, nc) not in visited:
+                if not game.is_blocked(r, c, nr, nc):
+                    visited.add((nr, nc))
+                    q.append(((nr, nc), dist + 1))
+
+    return 50  # unreachable
+
+
 def self_play_game_cpp(model, device='cpu', num_simulations=100, temp_threshold=15,
-                       batch_size=8):
+                       batch_size=8, gamma=DEFAULT_GAMMA,
+                       max_game_moves=DEFAULT_MAX_GAME_MOVES,
+                       asymmetric_ratio=DEFAULT_ASYMMETRIC_RATIO):
     """
     Play one full game of self-play using the C++ backend.
     100-1000x faster than the Python version due to:
@@ -147,6 +211,15 @@ def self_play_game_cpp(model, device='cpu', num_simulations=100, temp_threshold=
     import torch
 
     game = quoridor_cpp.QuoridorGame()
+
+    # Asymmetric wall curriculum: randomly give one player 0 walls
+    if np.random.random() < asymmetric_ratio:
+        if np.random.random() < 0.5:
+            game.p1_walls = 10
+            game.p2_walls = 0
+        else:
+            game.p1_walls = 0
+            game.p2_walls = 10
 
     # Create the batch evaluation function for the neural network
     def evaluate_batch(states_numpy):
@@ -190,28 +263,40 @@ def self_play_game_cpp(model, device='cpu', num_simulations=100, temp_threshold=
         game.play_move(move)
         move_count += 1
 
-        # Safety: cap game length
-        if move_count > 100:
+        # Truncated game cap
+        if move_count >= max_game_moves:
             break
 
-    # Assign values based on game outcome
+    # Assign discounted values based on game outcome
     winner = game.get_winner()
+    N = len(history)
     training_examples = []
 
-    for state, pi, player in history:
-        if winner == 0:
-            value = 0.0  # Draw (timeout)
-        elif winner == player:
-            value = 1.0
-        else:
-            value = -1.0
-        training_examples.append((state, pi, value))
+    if winner == 0:
+        # Truncated game — compute relative BFS score
+        p1_pos = game.p1_pos  # tuple (row, col)
+        p2_pos = game.p2_pos
+        p1_dist = _bfs_distance_cpp(game, p1_pos, 8)
+        p2_dist = _bfs_distance_cpp(game, p2_pos, 0)
+        v_cap = math.tanh((p2_dist - p1_dist) / 4.0)  # positive if P1 is closer
+
+        for t, (state, pi, player) in enumerate(history):
+            v_player = v_cap if player == 1 else -v_cap
+            value = v_player * (gamma ** (N - 1 - t))
+            training_examples.append((state, pi, value))
+    else:
+        for t, (state, pi, player) in enumerate(history):
+            z = 1.0 if winner == player else -1.0
+            value = z * (gamma ** (N - 1 - t))
+            training_examples.append((state, pi, value))
 
     return training_examples
 
 
 def generate_self_play_data(model, device='cpu', num_games=100, num_simulations=100,
-                            record_replays=False, parallel=None, batch_size=16):
+                            record_replays=False, parallel=None, batch_size=16,
+                            gamma=DEFAULT_GAMMA, max_game_moves=DEFAULT_MAX_GAME_MOVES,
+                            asymmetric_ratio=DEFAULT_ASYMMETRIC_RATIO):
     """
     Generate training data from multiple self-play games.
 
@@ -224,6 +309,9 @@ def generate_self_play_data(model, device='cpu', num_games=100, num_simulations=
         parallel: if True, use batched parallel self-play for better GPU utilization.
                   If None, auto-detect (use parallel on CUDA devices).
         batch_size: number of games to play simultaneously when parallel=True
+        gamma: discount factor for outcome rewards (default 0.98)
+        max_game_moves: truncate game after this many moves (default 60)
+        asymmetric_ratio: fraction of games with asymmetric walls (default 0.2)
 
     Returns:
         If record_replays is False:
@@ -242,7 +330,9 @@ def generate_self_play_data(model, device='cpu', num_games=100, num_simulations=
         for i in range(num_games):
             examples = self_play_game_cpp(
                 model, device=device, num_simulations=num_simulations,
-                batch_size=cpp_batch_size
+                batch_size=cpp_batch_size, gamma=gamma,
+                max_game_moves=max_game_moves,
+                asymmetric_ratio=asymmetric_ratio
             )
             game_lengths.append(len(examples))
             all_examples.extend(examples)
@@ -275,12 +365,16 @@ def generate_self_play_data(model, device='cpu', num_games=100, num_simulations=
         if record_replays:
             examples, replay = self_play_game(
                 model, device=device, num_simulations=num_simulations,
-                record_moves=True
+                record_moves=True, gamma=gamma,
+                max_game_moves=max_game_moves,
+                asymmetric_ratio=asymmetric_ratio
             )
             game_replays.append(replay)
         else:
             examples = self_play_game(
-                model, device=device, num_simulations=num_simulations
+                model, device=device, num_simulations=num_simulations,
+                gamma=gamma, max_game_moves=max_game_moves,
+                asymmetric_ratio=asymmetric_ratio
             )
         game_lengths.append(len(examples))
         all_examples.extend(examples)
