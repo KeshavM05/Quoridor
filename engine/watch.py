@@ -78,7 +78,7 @@ class WatchState:
                 print(f"Model '{model_id}' not found, using random weights")
 
         model.eval()
-        mcts = MCTS(model, device=self.device, num_simulations=50)
+        mcts = MCTS(model, device=self.device, num_simulations=10)
         return model, mcts
 
     def _resolve_model_path(self, model_id):
