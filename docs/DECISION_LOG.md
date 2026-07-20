@@ -203,6 +203,21 @@ Every problem encountered, decision made, and the reasoning behind it.
 
 ---
 
+## Problem 21: Wall filtering — the key insight from research
+**Date**: 2026-07-20  
+**Context**: Research into how the best Quoridor AIs work revealed that ALL successful MCTS implementations filter wall candidates. Pure MCTS with 128 wall options performs poorly. The gorisanson bot went from "poor" to 90% win rate just by filtering walls.  
+**Decision**: Implement wall candidate filtering in MCTS — only consider walls that increase opponent's BFS distance by ≥1.  
+**Reasoning**:
+- Reduces branching factor from ~130 to ~15-20
+- Every wall in training data is meaningful (not random junk)
+- The network learns "which walls matter" from data that only contains good walls
+- Gorisanson (JS, no neural net) with this technique + 60k sims beats minimax 90%
+- Claustrophobia (the only claimed-superhuman Quoridor AI) uses AlphaZero + learned wall selection
+- Every failed AlphaZero attempt (v-ade-r, xphoniex, cryer) has our exact same wall-dumping problem
+**Impact**: This is likely THE fix that makes our training work. The model never sees "place useless wall" in training data, so it never learns to dump walls.
+
+---
+
 ## Architecture Decisions
 
 ### Why AlphaZero over simpler approaches?

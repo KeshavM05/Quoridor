@@ -129,6 +129,44 @@ public:
     }
 
     /**
+     * BFS shortest path distance from start to target_row.
+     * Returns 50 if unreachable (shouldn't happen in valid game).
+     */
+    int bfs_distance(Position start, int target_row) const {
+        bool visited[BOARD_SIZE][BOARD_SIZE];
+        std::memset(visited, 0, sizeof(visited));
+        int dist[BOARD_SIZE][BOARD_SIZE];
+        std::memset(dist, 0, sizeof(dist));
+
+        Position queue_buf[81];
+        int front = 0, back = 0;
+
+        queue_buf[back++] = start;
+        visited[start.row][start.col] = true;
+
+        static constexpr int dr[] = {-1, 1, 0, 0};
+        static constexpr int dc[] = {0, 0, -1, 1};
+
+        while (front < back) {
+            Position pos = queue_buf[front++];
+            if (pos.row == target_row) return dist[pos.row][pos.col];
+
+            for (int d = 0; d < 4; d++) {
+                int nr = pos.row + dr[d];
+                int nc = pos.col + dc[d];
+                if (nr >= 0 && nr < 9 && nc >= 0 && nc < 9 && !visited[nr][nc]) {
+                    if (!is_blocked(pos.row, pos.col, nr, nc)) {
+                        visited[nr][nc] = true;
+                        dist[nr][nc] = dist[pos.row][pos.col] + 1;
+                        queue_buf[back++] = {nr, nc};
+                    }
+                }
+            }
+        }
+        return 50;
+    }
+
+    /**
      * BFS to check if a position can reach the target row.
      * Used for wall validity checking.
      */

@@ -27,6 +27,66 @@ static constexpr float C_PUCT = 1.5f;
 static constexpr float DIRICHLET_ALPHA = 0.3f;
 static constexpr float DIRICHLET_EPSILON = 0.25f;
 
+/**
+ * Filter wall candidates: only keep walls that increase opponent's BFS distance.
+ * This reduces branching factor from ~130 to ~15-20 and ensures every wall
+ * in training data is meaningful. Key technique from gorisanson/quoridor-ai.
+ */
+inline std::vector<Move> filter_wall_candidates(const QuoridorGame& game,
+                                                 const std::vector<Move>& legal_moves) {
+    std::vector<Move> filtered;
+    filtered.reserve(30); // typical: ~5 pawn moves + ~10-15 useful walls
+
+    // Always keep all pawn moves
+    for (const auto& move : legal_moves) {
+        if (move.type == MoveType::PAWN) {
+            filtered.push_back(move);
+        }
+    }
+
+    // Compute opponent's current BFS distance
+    int opponent = (game.current_player == 1) ? 2 : 1;
+    Position opp_pos = (opponent == 1) ? game.p1_pos : game.p2_pos;
+    int opp_target = (opponent == 1) ? 8 : 0;
+    int current_opp_dist = game.bfs_distance(opp_pos, opp_target);
+
+    // Only keep walls that increase opponent's BFS distance
+    for (const auto& move : legal_moves) {
+        if (move.type == MoveType::PAWN) continue;
+
+        // Temporarily place the wall and check opponent's new distance
+        QuoridorGame test_game = game;
+        test_game.play_move(move);
+
+        // After playing the wall, recompute opponent's distance
+        int new_opp_dist = test_game.bfs_distance(opp_pos, opp_target);
+
+        if (new_opp_dist > current_opp_dist) {
+            filtered.push_back(move);
+        }
+    }
+
+    // If no useful walls found, add a few random walls to maintain some exploration
+    if (filtered.size() <= 5) {
+        int wall_count = 0;
+        for (const auto& move : legal_moves) {
+            if (move.type != MoveType::PAWN && wall_count < 3) {
+                // Check it's not already in filtered
+                bool already_in = false;
+                for (const auto& f : filtered) {
+                    if (f.to_action() == move.to_action()) { already_in = true; break; }
+                }
+                if (!already_in) {
+                    filtered.push_back(move);
+                    wall_count++;
+                }
+            }
+        }
+    }
+
+    return filtered;
+}
+
 struct MCTSNode {
     MCTSNode* parent = nullptr;
     int action = -1;         // action that led to this node
@@ -165,10 +225,11 @@ public:
                 }
             }
 
-            // Create children for root
+            // Create children for root — filter walls to only useful ones
             auto legal_moves = root->game_state.get_legal_moves();
-            root->children.reserve(legal_moves.size());
-            for (const auto& move : legal_moves) {
+            auto filtered = filter_wall_candidates(root->game_state, legal_moves);
+            root->children.reserve(filtered.size());
+            for (const auto& move : filtered) {
                 int action = move.to_action();
                 auto child = std::make_unique<MCTSNode>(root.get(), action, policy[action]);
                 root->children.push_back(std::move(child));
@@ -248,10 +309,11 @@ public:
                     }
                 }
 
-                // Create children
+                // Create children — filter walls to only useful ones
                 auto legal_moves = node->game_state.get_legal_moves();
-                node->children.reserve(legal_moves.size());
-                for (const auto& move : legal_moves) {
+                auto filtered = filter_wall_candidates(node->game_state, legal_moves);
+                node->children.reserve(filtered.size());
+                for (const auto& move : filtered) {
                     int action = move.to_action();
                     auto child = std::make_unique<MCTSNode>(node, action, policies[i][action]);
                     node->children.push_back(std::move(child));
