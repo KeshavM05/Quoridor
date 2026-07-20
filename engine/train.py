@@ -175,7 +175,8 @@ def training_loop(
     parallel_batch_size=16,
     gamma=DEFAULT_GAMMA,
     max_game_moves=DEFAULT_MAX_GAME_MOVES,
-    asymmetric_ratio=DEFAULT_ASYMMETRIC_RATIO
+    asymmetric_ratio=DEFAULT_ASYMMETRIC_RATIO,
+    opponent_pool=True
 ):
     """Main AlphaZero training loop."""
 
@@ -209,6 +210,7 @@ def training_loop(
         'gamma': gamma,
         'max_game_moves': max_game_moves,
         'asymmetric_ratio': asymmetric_ratio,
+        'opponent_pool': opponent_pool,
     })
 
     # Initialize model
@@ -220,6 +222,10 @@ def training_loop(
     if os.path.exists(best_path):
         print(f"Loading existing model from {best_path}")
         model.load_state_dict(torch.load(best_path, map_location=device))
+
+    # Model history for opponent pool: keep snapshots every iteration
+    # We use the model from 5 iterations ago as an opponent
+    model_history = {}  # iteration -> state_dict
 
     # Training data buffer (keep last N games worth)
     replay_buffer = deque(maxlen=50000)
@@ -234,6 +240,15 @@ def training_loop(
         # 1. Self-play
         print(f"\n[1/3] Self-play ({num_self_play_games} games, {self_play_sims} sims/move)...")
         t0 = time.time()
+
+        # Get old model for opponent pool (from 5 iterations ago)
+        old_opponent_model = None
+        if opponent_pool and (iteration - 5) in model_history:
+            old_opponent_model = QuoridorNet()
+            old_opponent_model.load_state_dict(model_history[iteration - 5])
+            old_opponent_model.to(device)
+            old_opponent_model.eval()
+
         result = generate_self_play_data(
             model, device=device,
             num_games=num_self_play_games,
@@ -243,7 +258,9 @@ def training_loop(
             batch_size=parallel_batch_size,
             gamma=gamma,
             max_game_moves=max_game_moves,
-            asymmetric_ratio=asymmetric_ratio
+            asymmetric_ratio=asymmetric_ratio,
+            opponent_pool=opponent_pool,
+            old_model=old_opponent_model
         )
         if isinstance(result, tuple) and len(result) == 3:
             examples, avg_game_length, game_replays = result
@@ -299,6 +316,14 @@ def training_loop(
         writer.add_scalar('arena/win_rate', win_rate, iteration)
 
         model_accepted = win_rate >= win_threshold
+
+        # Save model snapshot for opponent pool (keep last 10 iterations to limit memory)
+        model_history[iteration] = {k: v.clone().cpu() for k, v in model.state_dict().items()}
+        # Prune old entries to save memory (keep only last 10)
+        if len(model_history) > 10:
+            oldest_key = min(model_history.keys())
+            del model_history[oldest_key]
+
         if model_accepted:
             print(f"  ✓ New model accepted (>{win_threshold:.0%})")
             torch.save(model.state_dict(), best_path)
@@ -397,6 +422,10 @@ if __name__ == '__main__':
                         help=f'Discount factor for outcome rewards (default: {DEFAULT_GAMMA})')
     parser.add_argument('--asymmetric-ratio', type=float, default=DEFAULT_ASYMMETRIC_RATIO,
                         help=f'Fraction of games with asymmetric walls (default: {DEFAULT_ASYMMETRIC_RATIO})')
+    parser.add_argument('--opponent-pool', action='store_true', default=True,
+                        help='Use opponent pool: 70%% self-play, 20%% vs old model, 10%% vs wall bot (default: True)')
+    parser.add_argument('--no-opponent-pool', dest='opponent_pool', action='store_false',
+                        help='Disable opponent pool (100%% self-play)')
     args = parser.parse_args()
 
     training_loop(
@@ -415,5 +444,6 @@ if __name__ == '__main__':
         parallel_batch_size=args.parallel_batch_size,
         gamma=args.gamma,
         max_game_moves=args.max_game_moves,
-        asymmetric_ratio=args.asymmetric_ratio
+        asymmetric_ratio=args.asymmetric_ratio,
+        opponent_pool=args.opponent_pool
     )

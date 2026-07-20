@@ -10,8 +10,11 @@
  *   - Wall blocking, BFS path validation, jump logic
  */
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <queue>
 #include <vector>
@@ -366,6 +369,103 @@ public:
         if (p1_pos.row == 8) return 1;
         if (p2_pos.row == 0) return 2;
         return 0;
+    }
+
+    /**
+     * Get proximity-filtered legal actions: all pawn moves + walls passing at least one criterion:
+     *   1. Wall center within Chebyshev distance <= 2 of EITHER player's pawn
+     *   2. Wall is adjacent (Chebyshev dist 1 on wall grid) to an already-placed wall
+     *   3. Wall touches left or right edge of the board (col 0 or col 7)
+     *
+     * This is MUCH faster than filter_wall_candidates (no BFS per wall for filtering)
+     * because the proximity check is O(1) per wall, and we only do BFS path validation
+     * for the ~15-20 walls that pass the proximity filter.
+     */
+    std::vector<Move> get_filtered_legal_actions() const {
+        std::vector<Move> result;
+        result.reserve(30);
+
+        // Always include all pawn moves
+        auto pawn_moves = get_legal_pawn_moves();
+        result.insert(result.end(), pawn_moves.begin(), pawn_moves.end());
+
+        // If no walls remaining, return just pawn moves
+        int walls_left = (current_player == 1) ? p1_walls : p2_walls;
+        if (walls_left == 0) return result;
+
+        // For each wall position, check proximity filter FIRST (cheap), then validity (expensive BFS)
+        for (int r = 0; r < WALL_GRID; r++) {
+            for (int c = 0; c < WALL_GRID; c++) {
+                // --- Proximity filter (all 3 criteria) ---
+                bool passes_proximity = false;
+
+                // Criterion 1: Chebyshev distance <= 2 from either pawn
+                int p1_cheb = std::max(std::abs(static_cast<int>(p1_pos.row) - r),
+                                       std::abs(static_cast<int>(p1_pos.col) - c));
+                int p2_cheb = std::max(std::abs(static_cast<int>(p2_pos.row) - r),
+                                       std::abs(static_cast<int>(p2_pos.col) - c));
+                if (p1_cheb <= 2 || p2_cheb <= 2) passes_proximity = true;
+
+                // Criterion 2: adjacent to an already-placed wall (Chebyshev dist 1 on wall grid)
+                if (!passes_proximity) {
+                    for (int dr = -1; dr <= 1 && !passes_proximity; dr++) {
+                        for (int dc = -1; dc <= 1 && !passes_proximity; dc++) {
+                            if (dr == 0 && dc == 0) continue;
+                            int nr = r + dr;
+                            int nc = c + dc;
+                            if (nr >= 0 && nr < WALL_GRID && nc >= 0 && nc < WALL_GRID) {
+                                if (h_walls[nr][nc] || v_walls[nr][nc]) {
+                                    passes_proximity = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Criterion 3: touches left or right edge of the board
+                if (!passes_proximity) {
+                    if (c == 0 || c == 7) passes_proximity = true;
+                }
+
+                if (!passes_proximity) continue;
+
+                // --- Now check if horizontal wall at (r,c) is valid ---
+                if (!h_walls[r][c]) {
+                    bool overlap = false;
+                    if (c > 0 && h_walls[r][c - 1]) overlap = true;
+                    if (c < 7 && h_walls[r][c + 1]) overlap = true;
+                    if (v_walls[r][c]) overlap = true; // crossing
+
+                    if (!overlap) {
+                        auto* self = const_cast<QuoridorGame*>(this);
+                        self->h_walls[r][c] = true;
+                        if (path_exists(p1_pos, 8) && path_exists(p2_pos, 0)) {
+                            result.emplace_back(MoveType::WALL_H, r, c);
+                        }
+                        self->h_walls[r][c] = false;
+                    }
+                }
+
+                // --- Now check if vertical wall at (r,c) is valid ---
+                if (!v_walls[r][c]) {
+                    bool overlap = false;
+                    if (r > 0 && v_walls[r - 1][c]) overlap = true;
+                    if (r < 7 && v_walls[r + 1][c]) overlap = true;
+                    if (h_walls[r][c]) overlap = true; // crossing
+
+                    if (!overlap) {
+                        auto* self = const_cast<QuoridorGame*>(this);
+                        self->v_walls[r][c] = true;
+                        if (path_exists(p1_pos, 8) && path_exists(p2_pos, 0)) {
+                            result.emplace_back(MoveType::WALL_V, r, c);
+                        }
+                        self->v_walls[r][c] = false;
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 
     /**

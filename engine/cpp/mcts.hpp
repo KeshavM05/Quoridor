@@ -28,63 +28,15 @@ static constexpr float DIRICHLET_ALPHA = 0.3f;
 static constexpr float DIRICHLET_EPSILON = 0.25f;
 
 /**
- * Filter wall candidates: only keep walls that increase opponent's BFS distance.
- * This reduces branching factor from ~130 to ~15-20 and ensures every wall
- * in training data is meaningful. Key technique from gorisanson/quoridor-ai.
+ * Get proximity-filtered legal actions from the game engine.
+ * Uses QuoridorGame::get_filtered_legal_actions() which applies the
+ * proximity-based filter (Chebyshev distance, adjacent walls, edge walls).
+ *
+ * Much faster than the old BFS-per-wall approach because proximity checks
+ * are O(1) per wall position.
  */
-inline std::vector<Move> filter_wall_candidates(const QuoridorGame& game,
-                                                 const std::vector<Move>& legal_moves) {
-    std::vector<Move> filtered;
-    filtered.reserve(30); // typical: ~5 pawn moves + ~10-15 useful walls
-
-    // Always keep all pawn moves
-    for (const auto& move : legal_moves) {
-        if (move.type == MoveType::PAWN) {
-            filtered.push_back(move);
-        }
-    }
-
-    // Compute opponent's current BFS distance
-    int opponent = (game.current_player == 1) ? 2 : 1;
-    Position opp_pos = (opponent == 1) ? game.p1_pos : game.p2_pos;
-    int opp_target = (opponent == 1) ? 8 : 0;
-    int current_opp_dist = game.bfs_distance(opp_pos, opp_target);
-
-    // Only keep walls that increase opponent's BFS distance
-    for (const auto& move : legal_moves) {
-        if (move.type == MoveType::PAWN) continue;
-
-        // Temporarily place the wall and check opponent's new distance
-        QuoridorGame test_game = game;
-        test_game.play_move(move);
-
-        // After playing the wall, recompute opponent's distance
-        int new_opp_dist = test_game.bfs_distance(opp_pos, opp_target);
-
-        if (new_opp_dist > current_opp_dist) {
-            filtered.push_back(move);
-        }
-    }
-
-    // If no useful walls found, add a few random walls to maintain some exploration
-    if (filtered.size() <= 5) {
-        int wall_count = 0;
-        for (const auto& move : legal_moves) {
-            if (move.type != MoveType::PAWN && wall_count < 3) {
-                // Check it's not already in filtered
-                bool already_in = false;
-                for (const auto& f : filtered) {
-                    if (f.to_action() == move.to_action()) { already_in = true; break; }
-                }
-                if (!already_in) {
-                    filtered.push_back(move);
-                    wall_count++;
-                }
-            }
-        }
-    }
-
-    return filtered;
+inline std::vector<Move> get_proximity_filtered_actions(const QuoridorGame& game) {
+    return game.get_filtered_legal_actions();
 }
 
 struct MCTSNode {
@@ -198,26 +150,70 @@ public:
             std::vector<std::vector<float>> states_batch = {root_state};
             auto [policies, values] = eval_fn(states_batch);
 
-            // Apply legal mask and normalize
-            auto legal_mask = root->game_state.get_legal_action_mask();
-            std::vector<float> policy(ACTION_SIZE);
+            // Get proximity-filtered actions
+            auto filtered = get_proximity_filtered_actions(root->game_state);
+
+            // Build a mask: only filtered actions get nonzero prior
+            std::vector<float> policy(ACTION_SIZE, 0.0f);
             float policy_sum = 0.0f;
-            for (int i = 0; i < ACTION_SIZE; i++) {
-                policy[i] = policies[0][i] * legal_mask[i];
-                policy_sum += policy[i];
+            for (const auto& move : filtered) {
+                int a = move.to_action();
+                policy[a] = policies[0][a];
+                policy_sum += policy[a];
             }
             if (policy_sum > 0.0f) {
                 for (int i = 0; i < ACTION_SIZE; i++) policy[i] /= policy_sum;
+            } else {
+                // Uniform over filtered actions if NN gives all zeros
+                float uniform = 1.0f / static_cast<float>(filtered.size());
+                for (const auto& move : filtered) {
+                    policy[move.to_action()] = uniform;
+                }
             }
 
-            // Add Dirichlet noise to root
+            // Split Dirichlet noise: 50% budget to pawn actions, 50% to wall actions
             if (add_noise) {
-                std::vector<float> noise_vec = dirichlet_noise(ACTION_SIZE);
+                // Separate filtered actions into pawn and wall
+                std::vector<int> pawn_actions, wall_actions;
+                for (const auto& move : filtered) {
+                    int a = move.to_action();
+                    if (move.type == MoveType::PAWN) {
+                        pawn_actions.push_back(a);
+                    } else {
+                        wall_actions.push_back(a);
+                    }
+                }
+
+                // Generate separate Dirichlet noise for each group
+                std::vector<float> noise_combined(ACTION_SIZE, 0.0f);
+
+                if (!pawn_actions.empty()) {
+                    auto pawn_noise = dirichlet_noise(static_cast<int>(pawn_actions.size()));
+                    for (size_t i = 0; i < pawn_actions.size(); i++) {
+                        // 50% of total noise budget goes to pawn moves
+                        noise_combined[pawn_actions[i]] = 0.5f * pawn_noise[i];
+                    }
+                }
+                if (!wall_actions.empty()) {
+                    auto wall_noise = dirichlet_noise(static_cast<int>(wall_actions.size()));
+                    for (size_t i = 0; i < wall_actions.size(); i++) {
+                        // 50% of total noise budget goes to wall moves
+                        noise_combined[wall_actions[i]] = 0.5f * wall_noise[i];
+                    }
+                }
+                // If one group is empty, the other gets all 100%
+                if (pawn_actions.empty() && !wall_actions.empty()) {
+                    for (int a : wall_actions) noise_combined[a] *= 2.0f;
+                }
+                if (wall_actions.empty() && !pawn_actions.empty()) {
+                    for (int a : pawn_actions) noise_combined[a] *= 2.0f;
+                }
+
+                // Mix noise with policy
                 policy_sum = 0.0f;
                 for (int i = 0; i < ACTION_SIZE; i++) {
                     policy[i] = (1.0f - DIRICHLET_EPSILON) * policy[i]
-                              + DIRICHLET_EPSILON * noise_vec[i];
-                    policy[i] *= legal_mask[i];
+                              + DIRICHLET_EPSILON * noise_combined[i];
                     policy_sum += policy[i];
                 }
                 if (policy_sum > 0.0f) {
@@ -225,9 +221,7 @@ public:
                 }
             }
 
-            // Create children for root — filter walls to only useful ones
-            auto legal_moves = root->game_state.get_legal_moves();
-            auto filtered = filter_wall_candidates(root->game_state, legal_moves);
+            // Create children from filtered moves with their priors
             root->children.reserve(filtered.size());
             for (const auto& move : filtered) {
                 int action = move.to_action();
@@ -309,13 +303,20 @@ public:
                     }
                 }
 
-                // Create children — filter walls to only useful ones
-                auto legal_moves = node->game_state.get_legal_moves();
-                auto filtered = filter_wall_candidates(node->game_state, legal_moves);
+                // Create children — use proximity-filtered actions
+                auto filtered = get_proximity_filtered_actions(node->game_state);
+
+                // Zero out non-filtered actions and renormalize
+                float filtered_sum = 0.0f;
+                for (const auto& move : filtered) {
+                    filtered_sum += policies[i][move.to_action()];
+                }
                 node->children.reserve(filtered.size());
                 for (const auto& move : filtered) {
                     int action = move.to_action();
-                    auto child = std::make_unique<MCTSNode>(node, action, policies[i][action]);
+                    float prior = (filtered_sum > 0.0f) ? policies[i][action] / filtered_sum
+                                                        : 1.0f / static_cast<float>(filtered.size());
+                    auto child = std::make_unique<MCTSNode>(node, action, prior);
                     node->children.push_back(std::move(child));
                 }
                 node->is_expanded = true;

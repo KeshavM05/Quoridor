@@ -162,6 +162,7 @@ PYBIND11_MODULE(quoridor_cpp, m) {
         .def("get_legal_moves", &QuoridorGame::get_legal_moves)
         .def("get_legal_pawn_moves", &QuoridorGame::get_legal_pawn_moves)
         .def("get_legal_wall_moves", &QuoridorGame::get_legal_wall_moves)
+        .def("get_filtered_legal_actions", &QuoridorGame::get_filtered_legal_actions)
         .def("get_winner", &QuoridorGame::get_winner)
         .def("is_blocked", &QuoridorGame::is_blocked)
         .def("path_exists", [](const QuoridorGame& g, py::tuple pos, int target_row) {
